@@ -18,8 +18,8 @@ import { requireAuth } from '@/lib/auth';
  * {
  *   title?: string;
  *   description?: string;
- *   status?: TaskStatus;
- *   priority?: TaskPriority;
+ *   columnId?: number;
+ *   priority?: Priority;
  *   assigneeId?: number | null;
  * }
  * 
@@ -87,19 +87,22 @@ export async function PATCH(
       updateData.description = body.description ? sanitizeInput(body.description) : null;
     }
 
-    if (body.status !== undefined) {
-      const validStatuses = ['TODO', 'IN_PROGRESS', 'DONE'];
-      if (!validStatuses.includes(body.status)) {
+    if (body.columnId !== undefined) {
+      const column = await prisma.kanbanColumn.findUnique({
+        where: { id: body.columnId },
+      });
+
+      if (!column) {
         return NextResponse.json(
           {
             success: false,
-            error: 'INVALID_STATUS',
-            message: 'สถานะไม่ถูกต้อง',
+            error: 'COLUMN_NOT_FOUND',
+            message: 'ไม่พบคอลัมน์',
           },
-          { status: 400 }
+          { status: 404 }
         );
       }
-      updateData.status = body.status;
+      updateData.columnId = body.columnId;
     }
 
     if (body.priority !== undefined) {
@@ -144,6 +147,7 @@ export async function PATCH(
       where: { id: taskId },
       data: updateData,
       include: {
+        column: true,
         assignee: {
           select: {
             id: true,

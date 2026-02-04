@@ -71,14 +71,20 @@ export interface UpdateUserInput {
 // ============================================
 
 /**
- * สถานะของงาน
- */
-export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE';
-
-/**
  * ระดับความสำคัญของงาน
  */
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+/**
+ * ข้อมูลคอลัมน์ Kanban
+ */
+export interface KanbanColumn {
+  id: number;
+  name: string;
+  color: string;
+  order: number;
+  isDefault: boolean;
+}
 
 /**
  * ข้อมูลงาน
@@ -87,7 +93,8 @@ export interface Task {
   id: number;
   title: string;
   description: string | null;
-  status: TaskStatus;
+  columnId: number;
+  column?: KanbanColumn;
   priority: TaskPriority;
   assigneeId: number | null;
   assignee: User | null;
@@ -102,6 +109,7 @@ export interface CreateTaskInput {
   title: string;
   description?: string;
   priority: TaskPriority;
+  columnId?: number;
   assigneeId?: number;
 }
 
@@ -111,7 +119,7 @@ export interface CreateTaskInput {
 export interface UpdateTaskInput {
   title?: string;
   description?: string;
-  status?: TaskStatus;
+  columnId?: number;
   priority?: TaskPriority;
   assigneeId?: number | null;
 }
@@ -210,6 +218,8 @@ export interface DashboardStats {
   inProgressTasks: number;
   doneTasks: number;
   totalTasks: number;
+  // ข้อมูลเพิ่มเติมสำหรับระบบ column ใหม่
+  tasksByColumn?: { columnId: number; columnName: string; count: number }[];
 }
 
 /**

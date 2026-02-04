@@ -113,8 +113,8 @@ export default function DashboardPage() {
       iconColor: 'text-amber-600',
     },
     {
-      title: 'งานที่กำลังทำ',
-      value: stats.inProgressTasks,
+      title: 'งานทั้งหมด',
+      value: stats.totalTasks,
       subtext: 'Projects On-going',
       icon: Clock,
       color: 'blue',
@@ -123,9 +123,9 @@ export default function DashboardPage() {
       iconColor: 'text-blue-600',
     },
     {
-      title: 'งานเสร็จสิ้น',
-      value: stats.doneTasks,
-      subtext: `จากทั้งหมด ${stats.totalTasks} งาน`,
+      title: 'คอลัมน์ใน Kanban',
+      value: stats.tasksByColumn?.length || 0,
+      subtext: 'จัดการงาน',
       icon: CheckCircle,
       color: 'emerald',
       borderColor: 'border-emerald-500',

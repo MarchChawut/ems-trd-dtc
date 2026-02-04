@@ -1,8 +1,11 @@
 /**
  * ==================================================
- * Leaves Page - หน้าบันทึกการลา
+ * Leaves Page - หน้าบันทึกการลา (อัปเดตเวอร์ชันใหม่)
  * ==================================================
- * แสดงรายการลาทั้งหมดและจัดการการอนุมัติ
+ * เพิ่มฟีเจอร์:
+ * - Dashboard สถิติรายบุคคล
+ * - ค้นหาด้วยชื่อหรือวันที่
+ * - เลือกชื่อผู้ขอลาได้
  */
 
 'use client';
@@ -17,10 +20,15 @@ import {
   Loader2,
   AlertCircle,
   Calendar,
-  X
+  X,
+  Search,
+  Users,
+  BarChart3,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Leave, LeaveType, LeaveStatus, User } from '@/types';
+import { Leave, LeaveType, LeaveStatus, User, UserRole } from '@/types';
 
 /**
  * สีและข้อความของประเภทการลา
@@ -42,6 +50,23 @@ const leaveStatusConfig: Record<LeaveStatus, { label: string; bg: string; text: 
 };
 
 /**
+ * ข้อมูลสถิติรายบุคคล
+ */
+interface UserLeaveStats {
+  user: User;
+  stats: {
+    totalLeaves: number;
+    sickDays: number;
+    personalDays: number;
+    vacationDays: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+    totalDays: number;
+  };
+}
+
+/**
  * หน้าบันทึกการลา
  */
 export default function LeavesPage() {
@@ -49,6 +74,12 @@ export default function LeavesPage() {
   
   // State สำหรับเก็บรายการลา
   const [leaves, setLeaves] = useState<Leave[]>([]);
+  
+  // State สำหรับเก็บรายชื่อผู้ใช้ (สำหรับเลือกผู้ขอลา)
+  const [users, setUsers] = useState<User[]>([]);
+  
+  // State สำหรับเก็บสถิติรายบุคคล
+  const [userStats, setUserStats] = useState<UserLeaveStats[]>([]);
   
   // State สำหรับสถานะการโหลด
   const [isLoading, setIsLoading] = useState(true);
@@ -59,8 +90,17 @@ export default function LeavesPage() {
   // State สำหรับเปิด/ปิด Modal สร้างการลา
   const [isModalOpen, setIsModalOpen] = useState(false);
   
+  // State สำหรับแสดง/ซ่อน Dashboard
+  const [showDashboard, setShowDashboard] = useState(false);
+  
+  // State สำหรับค้นหา
+  const [searchType, setSearchType] = useState<'name' | 'date'>('name');
+  const [searchName, setSearchName] = useState('');
+  const [searchDate, setSearchDate] = useState('');
+  
   // State สำหรับข้อมูลการลาใหม่
   const [newLeave, setNewLeave] = useState({
+    userId: '',
     type: 'SICK' as LeaveType,
     startDate: '',
     endDate: '',
@@ -68,20 +108,29 @@ export default function LeavesPage() {
   });
 
   /**
-   * ดึงข้อมูลการลาจาก API
+   * ดึงข้อมูลการลาและผู้ใช้จาก API
    */
   useEffect(() => {
-    const fetchLeaves = async () => {
+    const fetchData = async () => {
       try {
-        const response = await fetch('/api/leaves');
-        const data = await response.json();
+        // ดึงข้อมูลการลา
+        const leavesResponse = await fetch('/api/leaves');
+        const leavesData = await leavesResponse.json();
         
-        if (!response.ok) {
-          throw new Error(data.message || 'ไม่สามารถดึงข้อมูลการลาได้');
+        if (!leavesResponse.ok) {
+          throw new Error(leavesData.message || 'ไม่สามารถดึงข้อมูลการลาได้');
         }
         
-        if (data.success) {
-          setLeaves(data.data);
+        if (leavesData.success) {
+          setLeaves(leavesData.data);
+        }
+        
+        // ดึงข้อมูลผู้ใช้ (สำหรับเลือกผู้ขอลา)
+        const usersResponse = await fetch('/api/users');
+        const usersData = await usersResponse.json();
+        
+        if (usersResponse.ok && usersData.success) {
+          setUsers(usersData.data);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
@@ -90,8 +139,80 @@ export default function LeavesPage() {
       }
     };
     
-    fetchLeaves();
+    fetchData();
   }, []);
+
+  /**
+   * ดึงข้อมูลสถิติรายบุคคล
+   */
+  const fetchDashboard = async () => {
+    try {
+      const response = await fetch('/api/leaves/dashboard');
+      const data = await response.json();
+      
+      if (data.success) {
+        setUserStats(data.data.users);
+      }
+    } catch (err) {
+      console.error('Error fetching dashboard:', err);
+    }
+  };
+
+  /**
+   * สลับการแสดง Dashboard
+   */
+  const toggleDashboard = () => {
+    if (!showDashboard) {
+      fetchDashboard();
+    }
+    setShowDashboard(!showDashboard);
+  };
+
+  /**
+   * ค้นหาการลา
+   */
+  const handleSearch = async () => {
+    try {
+      setIsLoading(true);
+      
+      let url = '/api/leaves/search?';
+      if (searchType === 'name' && searchName) {
+        url += `name=${encodeURIComponent(searchName)}`;
+      } else if (searchType === 'date' && searchDate) {
+        url += `date=${searchDate}`;
+      }
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.success) {
+        setLeaves(data.data);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * รีเซ็ตการค้นหา
+   */
+  const resetSearch = async () => {
+    setSearchName('');
+    setSearchDate('');
+    
+    try {
+      const response = await fetch('/api/leaves');
+      const data = await response.json();
+      
+      if (data.success) {
+        setLeaves(data.data);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    }
+  };
 
   /**
    * ฟังก์ชันสร้างรายการลาใหม่
@@ -99,7 +220,7 @@ export default function LeavesPage() {
   const handleCreateLeave = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!newLeave.startDate || !newLeave.endDate || !newLeave.reason.trim()) {
+    if (!newLeave.userId || !newLeave.startDate || !newLeave.endDate || !newLeave.reason.trim()) {
       setError('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
     }
@@ -108,7 +229,10 @@ export default function LeavesPage() {
       const response = await fetch('/api/leaves', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newLeave),
+        body: JSON.stringify({
+          ...newLeave,
+          userId: parseInt(newLeave.userId),
+        }),
       });
       
       const data = await response.json();
@@ -121,6 +245,7 @@ export default function LeavesPage() {
         setLeaves([data.data, ...leaves]);
         setIsModalOpen(false);
         setNewLeave({
+          userId: '',
           type: 'SICK',
           startDate: '',
           endDate: '',
@@ -190,7 +315,7 @@ export default function LeavesPage() {
   };
 
   // แสดง loading ขณะโหลดข้อมูล
-  if (isLoading) {
+  if (isLoading && leaves.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
@@ -201,23 +326,38 @@ export default function LeavesPage() {
   return (
     <div className="space-y-6">
       {/* หัวข้อหน้า */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">บันทึกการลา</h1>
           <p className="text-slate-500 mt-1">
             จัดการและบันทึกประวัติการลาของพนักงาน
           </p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className={cn(
-            "flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg",
-            "hover:bg-indigo-700 transition-colors shadow-sm"
-          )}
-        >
-          <Plus size={18} />
-          <span>บันทึกการลาใหม่</span>
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={toggleDashboard}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
+              showDashboard 
+                ? "bg-indigo-100 text-indigo-700" 
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            )}
+          >
+            <BarChart3 size={18} />
+            <span>สถิติรายบุคคล</span>
+            {showDashboard ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className={cn(
+              "flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg",
+              "hover:bg-indigo-700 transition-colors shadow-sm"
+            )}
+          >
+            <Plus size={18} />
+            <span>บันทึกการลาใหม่</span>
+          </button>
+        </div>
       </div>
 
       {/* แสดงข้อผิดพลาด */}
@@ -227,6 +367,147 @@ export default function LeavesPage() {
           <p className="text-rose-600">{error}</p>
         </div>
       )}
+
+      {/* Dashboard สถิติรายบุคคล */}
+      {showDashboard && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-indigo-600" />
+            สถิติการลารายบุคคล (ปี {new Date().getFullYear()})
+          </h2>
+          
+          {userStats.length === 0 ? (
+            <div className="text-center py-8 text-slate-400">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+              <p>กำลังโหลดข้อมูล...</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4 text-sm font-semibold text-slate-600">พนักงาน</th>
+                    <th className="py-3 px-4 text-sm font-semibold text-slate-600 text-center">ลาป่วย</th>
+                    <th className="py-3 px-4 text-sm font-semibold text-slate-600 text-center">ลากิจ</th>
+                    <th className="py-3 px-4 text-sm font-semibold text-slate-600 text-center">ลาพักร้อน</th>
+                    <th className="py-3 px-4 text-sm font-semibold text-slate-600 text-center">รวม (วัน)</th>
+                    <th className="py-3 px-4 text-sm font-semibold text-slate-600 text-center">สถานะ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {userStats.map((item) => (
+                    <tr key={item.user.id} className="hover:bg-slate-50">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-600">
+                            {item.user.avatar || item.user.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-700">{item.user.name}</p>
+                            <p className="text-xs text-slate-400">{item.user.department}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="text-rose-600 font-medium">{item.stats.sickDays}</span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="text-amber-600 font-medium">{item.stats.personalDays}</span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="text-blue-600 font-medium">{item.stats.vacationDays}</span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="font-bold text-slate-700">{item.stats.totalDays}</span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex justify-center gap-1 text-xs">
+                          {item.stats.pending > 0 && (
+                            <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">
+                              รอ {item.stats.pending}
+                            </span>
+                          )}
+                          {item.stats.approved > 0 && (
+                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">
+                              อนุมัติ {item.stats.approved}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ส่วนค้นหา */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+        <div className="flex flex-col sm:flex-row gap-4">
+          {/* เลือกประเภทการค้นหา */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSearchType('name')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                searchType === 'name'
+                  ? "bg-indigo-600 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              )}
+            >
+              ค้นหาด้วยชื่อ
+            </button>
+            <button
+              onClick={() => setSearchType('date')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                searchType === 'date'
+                  ? "bg-indigo-600 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              )}
+            >
+              ค้นหาด้วยวันที่
+            </button>
+          </div>
+
+          {/* ช่องค้นหา */}
+          <div className="flex-1 flex gap-2">
+            {searchType === 'name' ? (
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="พิมพ์ชื่อพนักงาน..."
+                  value={searchName}
+                  onChange={(e) => setSearchName(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                />
+              </div>
+            ) : (
+              <input
+                type="date"
+                value={searchDate}
+                onChange={(e) => setSearchDate(e.target.value)}
+                className="flex-1 px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+              />
+            )}
+            <button
+              onClick={handleSearch}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              ค้นหา
+            </button>
+            <button
+              onClick={resetSearch}
+              className="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+            >
+              รีเซ็ต
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* รายการลา */}
       <div className="space-y-4">
@@ -341,6 +622,26 @@ export default function LeavesPage() {
 
             {/* Form */}
             <form onSubmit={handleCreateLeave} className="p-6 space-y-4">
+              {/* เลือกพนักงาน */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  พนักงาน <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  required
+                  className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  value={newLeave.userId}
+                  onChange={(e) => setNewLeave({ ...newLeave, userId: e.target.value })}
+                >
+                  <option value="">เลือกพนักงาน...</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name} {user.department && `(${user.department})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   ประเภทการลา

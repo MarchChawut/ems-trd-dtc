@@ -102,6 +102,7 @@ export async function GET(request: NextRequest) {
  * 
  * Request Body:
  * {
+ *   userId?: number; // สำหรับ MANAGER ขึ้นไปที่สร้างให้คนอื่น
  *   type: LeaveType;
  *   startDate: string; // YYYY-MM-DD
  *   endDate: string;   // YYYY-MM-DD
@@ -149,10 +150,34 @@ export async function POST(request: NextRequest) {
 
     const { type, startDate, endDate, reason } = validationResult.data;
 
+    // กำหนด userId สำหรับการลา
+    let targetUserId = currentUser.id;
+    
+    // ถ้าระบุ userId และเป็น MANAGER ขึ้นไป ให้ใช้ userId นั้น
+    if (body.userId && isManagerOrAbove(currentUser.role)) {
+      // ตรวจสอบว่าผู้ใช้มีอยู่จริง
+      const targetUser = await prisma.user.findUnique({
+        where: { id: body.userId },
+      });
+      
+      if (!targetUser) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'USER_NOT_FOUND',
+            message: 'ไม่พบผู้ใช้ที่ระบุ',
+          },
+          { status: 404 }
+        );
+      }
+      
+      targetUserId = body.userId;
+    }
+
     // สร้างรายการลาใหม่
     const leave = await prisma.leave.create({
       data: {
-        userId: currentUser.id,
+        userId: targetUserId,
         type,
         startDate: new Date(startDate),
         endDate: new Date(endDate),

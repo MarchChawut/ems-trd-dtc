@@ -100,6 +100,7 @@ export const createTaskSchema = z.object({
     .max(255, 'ชื่องานต้องไม่เกิน 255 ตัวอักษร'),
   description: z.string().max(1000).optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
+  columnId: z.number().int().positive().optional(),
   assigneeId: z.number().int().positive().optional(),
 });
 

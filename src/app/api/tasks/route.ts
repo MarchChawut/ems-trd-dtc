@@ -15,7 +15,7 @@ import { requireAuth } from '@/lib/auth';
  * ดึงรายการงานทั้งหมด
  * 
  * Query Parameters:
- * - status: กรองตามสถานะ (TODO, IN_PROGRESS, DONE)
+ * - columnId: กรองตามคอลัมน์
  * - priority: กรองตามความสำคัญ (LOW, MEDIUM, HIGH, URGENT)
  * - assigneeId: กรองตามผู้รับผิดชอบ
  * 
@@ -38,15 +38,15 @@ export async function GET(request: NextRequest) {
 
     // ดึง query parameters
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status');
+    const columnId = searchParams.get('columnId');
     const priority = searchParams.get('priority');
     const assigneeId = searchParams.get('assigneeId');
 
     // สร้าง where clause
     const where: any = {};
 
-    if (status) {
-      where.status = status;
+    if (columnId) {
+      where.columnId = parseInt(columnId);
     }
 
     if (priority) {
@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
     const tasks = await prisma.task.findMany({
       where,
       include: {
+        column: true,
         assignee: {
           select: {
             id: true,
@@ -101,7 +102,8 @@ export async function GET(request: NextRequest) {
  * {
  *   title: string;
  *   description?: string;
- *   priority: TaskPriority;
+ *   priority: Priority;
+ *   columnId?: number;
  *   assigneeId?: number;
  * }
  * 
@@ -142,7 +144,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { title, description, priority, assigneeId } = validationResult.data;
+    const { title, description, priority, columnId, assigneeId } = validationResult.data;
+
+    // ตรวจสอบว่าคอลัมน์มีอยู่หรือไม่ (ถ้าระบุ)
+    if (columnId) {
+      const column = await prisma.kanbanColumn.findUnique({
+        where: { id: columnId },
+      });
+
+      if (!column) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'COLUMN_NOT_FOUND',
+            message: 'ไม่พบคอลัมน์',
+          },
+          { status: 404 }
+        );
+      }
+    }
 
     // ตรวจสอบว่าผู้รับผิดชอบมีอยู่จริงหรือไม่ (ถ้าระบุ)
     if (assigneeId) {
@@ -168,10 +188,11 @@ export async function POST(request: NextRequest) {
         title: sanitizeInput(title),
         description: description ? sanitizeInput(description) : null,
         priority,
-        status: 'TODO',
+        columnId: columnId || 1, // คอลัมน์แรกเป็นค่าเริ่มต้น
         assigneeId: assigneeId || null,
       },
       include: {
+        column: true,
         assignee: {
           select: {
             id: true,

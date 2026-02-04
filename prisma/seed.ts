@@ -11,7 +11,7 @@
  * npm run db:seed
  */
 
-import { PrismaClient, Role, TaskStatus, Priority, LeaveType, LeaveStatus } from '@prisma/client';
+import { PrismaClient, Role, Priority, LeaveType, LeaveStatus } from '@prisma/client';
 import { hashPassword } from '../src/lib/security';
 
 const prisma = new PrismaClient();
@@ -102,6 +102,26 @@ async function main() {
   }
 
   // ============================================
+  // สร้างคอลัมน์ Kanban เริ่มต้น
+  // ============================================
+  console.log('📊 กำลังสร้างคอลัมน์ Kanban...');
+  
+  const defaultColumns = [
+    { name: 'รอดำเนินการ', color: 'slate', order: 0, isDefault: true },
+    { name: 'กำลังทำ', color: 'blue', order: 1, isDefault: true },
+    { name: 'เสร็จสิ้น', color: 'emerald', order: 2, isDefault: true },
+  ];
+  
+  for (const colData of defaultColumns) {
+    const column = await prisma.kanbanColumn.upsert({
+      where: { id: colData.order + 1 },
+      update: {},
+      create: colData,
+    });
+    console.log('✅ สร้างคอลัมน์:', column.name);
+  }
+
+  // ============================================
   // สร้างงานตัวอย่าง
   // ============================================
   console.log('📋 กำลังสร้างงานตัวอย่าง...');
@@ -110,28 +130,28 @@ async function main() {
     {
       title: 'ออกแบบหน้า UI ใหม่',
       description: 'ออกแบบหน้า Dashboard ใหม่ตาม requirements',
-      status: TaskStatus.TODO,
+      columnId: 1, // รอดำเนินการ
       priority: Priority.HIGH,
       assigneeId: 4, // สมหญิง
     },
     {
       title: 'เชื่อมต่อ API ระบบ Login',
       description: 'พัฒนา API สำหรับการเข้าสู่ระบบ',
-      status: TaskStatus.IN_PROGRESS,
+      columnId: 2, // กำลังทำ
       priority: Priority.HIGH,
       assigneeId: 3, // วิชัย
     },
     {
       title: 'ทำรายงานสรุปประจำเดือน',
       description: 'สรุปผลงานประจำเดือนมกราคม',
-      status: TaskStatus.DONE,
+      columnId: 3, // เสร็จสิ้น
       priority: Priority.MEDIUM,
       assigneeId: 5, // นารี
     },
     {
       title: 'อัปเดตเอกสารระบบ',
       description: 'อัปเดตคู่มือการใช้งานระบบ',
-      status: TaskStatus.TODO,
+      columnId: 1, // รอดำเนินการ
       priority: Priority.LOW,
       assigneeId: null,
     },

@@ -17,13 +17,14 @@ import { requireAuth } from '@/lib/auth';
  * {
  *   success: true,
  *   data: {
- *     totalUsers: number;
- *     activeUsers: number;
- *     pendingLeaves: number;
- *     totalLeaves: number;
- *     inProgressTasks: number;
- *     doneTasks: number;
- *     totalTasks: number;
+ *     stats: {
+ *       totalUsers: number;
+ *       activeUsers: number;
+ *       pendingLeaves: number;
+ *       totalLeaves: number;
+ *       totalTasks: number;
+ *       tasksByColumn: { columnId, columnName, count }[];
+ *     }
  *   }
  * }
  */
@@ -44,9 +45,8 @@ export async function GET(request: NextRequest) {
       activeUsers,
       pendingLeaves,
       totalLeaves,
-      inProgressTasks,
-      doneTasks,
       totalTasks,
+      columns,
     ] = await Promise.all([
       // จำนวนผู้ใช้ทั้งหมด
       prisma.user.count(),
@@ -60,15 +60,26 @@ export async function GET(request: NextRequest) {
       // จำนวนการลาทั้งหมด
       prisma.leave.count(),
       
-      // จำนวนงานที่กำลังทำ
-      prisma.task.count({ where: { status: 'IN_PROGRESS' } }),
-      
-      // จำนวนงานที่เสร็จสิ้น
-      prisma.task.count({ where: { status: 'DONE' } }),
-      
       // จำนวนงานทั้งหมด
       prisma.task.count(),
+      
+      // คอลัมน์ทั้งหมดพร้อมจำนวนงาน
+      prisma.kanbanColumn.findMany({
+        include: {
+          _count: {
+            select: { tasks: true },
+          },
+        },
+        orderBy: { order: 'asc' },
+      }),
     ]);
+
+    // แปลงข้อมูล tasksByColumn
+    const tasksByColumn = columns.map(col => ({
+      columnId: col.id,
+      columnName: col.name,
+      count: col._count.tasks,
+    }));
 
     // ดึงข้อมูลการลาล่าสุดที่รออนุมัติ (5 รายการ)
     const recentPendingLeaves = await prisma.leave.findMany({
@@ -90,6 +101,7 @@ export async function GET(request: NextRequest) {
     // ดึงข้อมูลงานล่าสุด (5 รายการ)
     const recentTasks = await prisma.task.findMany({
       include: {
+        column: true,
         assignee: {
           select: {
             id: true,
@@ -110,9 +122,8 @@ export async function GET(request: NextRequest) {
           activeUsers,
           pendingLeaves,
           totalLeaves,
-          inProgressTasks,
-          doneTasks,
           totalTasks,
+          tasksByColumn,
         },
         recentPendingLeaves,
         recentTasks,

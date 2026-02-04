@@ -2,7 +2,9 @@
  * ==================================================
  * Tasks Page - หน้าจัดการงาน (Kanban Board)
  * ==================================================
- * แสดงงานในรูปแบบ Kanban Board พร้อมฟังก์ชัน Drag & Drop
+ * แสดงงานในรูปแบบ Kanban Board พร้อมฟังก์ชัน:
+ * - Drag & Drop
+ * - จัดการ Column (เพิ่ม/ลบ/แก้ไข)
  */
 
 'use client';
@@ -14,19 +16,24 @@ import {
   Trash2, 
   Loader2,
   AlertCircle,
-  X
+  X,
+  Settings,
+  MoreVertical,
+  GripVertical
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Task, TaskStatus, TaskPriority, User } from '@/types';
+import { Task, TaskPriority, User } from '@/types';
 
 /**
- * คอลัมน์ใน Kanban Board
+ * ข้อมูลคอลัมน์
  */
-const columns: { id: TaskStatus; title: string; color: string; bgColor: string }[] = [
-  { id: 'TODO', title: 'รอดำเนินการ', color: 'border-slate-300', bgColor: 'bg-slate-50' },
-  { id: 'IN_PROGRESS', title: 'กำลังทำ', color: 'border-blue-300', bgColor: 'bg-blue-50' },
-  { id: 'DONE', title: 'เสร็จสิ้น', color: 'border-emerald-300', bgColor: 'bg-emerald-50' },
-];
+interface Column {
+  id: number;
+  name: string;
+  color: string;
+  order: number;
+  isDefault: boolean;
+}
 
 /**
  * สีของ priority
@@ -39,6 +46,18 @@ const priorityColors: Record<TaskPriority, { bg: string; text: string; label: st
 };
 
 /**
+ * สีของคอลัมน์
+ */
+const columnColors: Record<string, { border: string; bg: string }> = {
+  slate: { border: 'border-slate-300', bg: 'bg-slate-50' },
+  blue: { border: 'border-blue-300', bg: 'bg-blue-50' },
+  emerald: { border: 'border-emerald-300', bg: 'bg-emerald-50' },
+  amber: { border: 'border-amber-300', bg: 'bg-amber-50' },
+  rose: { border: 'border-rose-300', bg: 'bg-rose-50' },
+  purple: { border: 'border-purple-300', bg: 'bg-purple-50' },
+};
+
+/**
  * หน้าจัดการงาน (Kanban Board)
  */
 export default function TasksPage() {
@@ -47,7 +66,10 @@ export default function TasksPage() {
   // State สำหรับเก็บรายการงาน
   const [tasks, setTasks] = useState<Task[]>([]);
   
-  // State สำหรับเก็บรายชื่อผู้ใช้ (สำหรับมอบหมายงาน)
+  // State สำหรับเก็บคอลัมน์
+  const [columns, setColumns] = useState<Column[]>([]);
+  
+  // State สำหรับเก็บรายชื่อผู้ใช้
   const [users, setUsers] = useState<User[]>([]);
   
   // State สำหรับสถานะการโหลด
@@ -57,34 +79,58 @@ export default function TasksPage() {
   const [error, setError] = useState<string | null>(null);
   
   // State สำหรับเปิด/ปิด Modal สร้างงาน
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  
+  // State สำหรับเปิด/ปิด Modal จัดการคอลัมน์
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
   
   // State สำหรับข้อมูลงานใหม่
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
     priority: 'MEDIUM' as TaskPriority,
+    columnId: '',
     assigneeId: '',
+  });
+  
+  // State สำหรับข้อมูลคอลัมน์ใหม่
+  const [newColumn, setNewColumn] = useState({
+    name: '',
+    color: 'slate',
   });
   
   // State สำหรับงานที่กำลังลาก
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
+  
+  // State สำหรับ role ของผู้ใช้ปัจจุบัน
+  const [userRole, setUserRole] = useState<string>('');
 
   /**
-   * ดึงข้อมูลงานและผู้ใช้จาก API
+   * ดึงข้อมูลจาก API
    */
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // ดึงข้อมูล session เพื่อตรวจสอบ role
+        const sessionRes = await fetch('/api/auth/session');
+        const sessionData = await sessionRes.json();
+        if (sessionData.success) {
+          setUserRole(sessionData.data.user.role);
+        }
+
+        // ดึงข้อมูลคอลัมน์
+        const columnsResponse = await fetch('/api/columns');
+        const columnsData = await columnsResponse.json();
+        
+        if (columnsResponse.ok && columnsData.success) {
+          setColumns(columnsData.data);
+        }
+
         // ดึงข้อมูลงาน
         const tasksResponse = await fetch('/api/tasks');
         const tasksData = await tasksResponse.json();
         
-        if (!tasksResponse.ok) {
-          throw new Error(tasksData.message || 'ไม่สามารถดึงข้อมูลงานได้');
-        }
-        
-        if (tasksData.success) {
+        if (tasksResponse.ok && tasksData.success) {
           setTasks(tasksData.data);
         }
         
@@ -122,14 +168,14 @@ export default function TasksPage() {
   /**
    * ฟังก์ชันวางงานในคอลัมน์ใหม่
    */
-  const handleDrop = async (e: React.DragEvent, status: TaskStatus) => {
+  const handleDrop = async (e: React.DragEvent, columnId: number) => {
     e.preventDefault();
     
-    if (!draggedTask || draggedTask.status === status) return;
+    if (!draggedTask || draggedTask.columnId === columnId) return;
     
     // อัปเดต UI ทันที (Optimistic Update)
     const updatedTasks = tasks.map(t =>
-      t.id === draggedTask.id ? { ...t, status } : t
+      t.id === draggedTask.id ? { ...t, columnId } : t
     );
     setTasks(updatedTasks);
     
@@ -138,7 +184,7 @@ export default function TasksPage() {
       const response = await fetch(`/api/tasks/${draggedTask.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ columnId }),
       });
       
       if (!response.ok) {
@@ -168,6 +214,7 @@ export default function TasksPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...newTask,
+          columnId: newTask.columnId ? parseInt(newTask.columnId) : columns[0]?.id,
           assigneeId: newTask.assigneeId ? parseInt(newTask.assigneeId) : undefined,
         }),
       });
@@ -180,14 +227,80 @@ export default function TasksPage() {
       
       if (data.success) {
         setTasks([...tasks, data.data]);
-        setIsModalOpen(false);
+        setIsTaskModalOpen(false);
         setNewTask({
           title: '',
           description: '',
           priority: 'MEDIUM',
+          columnId: '',
           assigneeId: '',
         });
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    }
+  };
+
+  /**
+   * ฟังก์ชันสร้างคอลัมน์ใหม่
+   */
+  const handleCreateColumn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!newColumn.name.trim()) return;
+    
+    try {
+      const response = await fetch('/api/columns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newColumn),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'ไม่สามารถสร้างคอลัมน์ได้');
+      }
+      
+      if (data.success) {
+        setColumns([...columns, data.data]);
+        setNewColumn({ name: '', color: 'slate' });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    }
+  };
+
+  /**
+   * ฟังก์ชันลบคอลัมน์
+   */
+  const handleDeleteColumn = async (columnId: number) => {
+    const column = columns.find(c => c.id === columnId);
+    if (column?.isDefault) {
+      alert('ไม่สามารถลบคอลัมน์เริ่มต้นได้');
+      return;
+    }
+    
+    // ตรวจสอบว่ามีงานในคอลัมน์หรือไม่
+    const tasksInColumn = tasks.filter(t => t.columnId === columnId);
+    if (tasksInColumn.length > 0) {
+      alert(`ไม่สามารถลบคอลัมน์นี้ได้ เนื่องจากมีงาน ${tasksInColumn.length} รายการอยู่ในคอลัมน์`);
+      return;
+    }
+    
+    if (!confirm('ต้องการลบคอลัมน์นี้ใช่หรือไม่?')) return;
+    
+    try {
+      const response = await fetch(`/api/columns/${columnId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'ไม่สามารถลบคอลัมน์ได้');
+      }
+      
+      setColumns(columns.filter(c => c.id !== columnId));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
     }
@@ -215,6 +328,9 @@ export default function TasksPage() {
     }
   };
 
+  // ตรวจสอบสิทธิ์จัดการคอลัมน์
+  const canManageColumns = ['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(userRole);
+
   // แสดง loading ขณะโหลดข้อมูล
   if (isLoading) {
     return (
@@ -234,16 +350,30 @@ export default function TasksPage() {
             ลากและวางงานเพื่อเปลี่ยนสถานะ
           </p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className={cn(
-            "flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg",
-            "hover:bg-indigo-700 transition-colors shadow-sm"
+        <div className="flex gap-2">
+          {canManageColumns && (
+            <button
+              onClick={() => setIsColumnModalOpen(true)}
+              className={cn(
+                "flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-2 rounded-lg",
+                "hover:bg-slate-200 transition-colors"
+              )}
+            >
+              <Settings size={18} />
+              <span>จัดการคอลัมน์</span>
+            </button>
           )}
-        >
-          <Plus size={18} />
-          <span>เพิ่มงานใหม่</span>
-        </button>
+          <button
+            onClick={() => setIsTaskModalOpen(true)}
+            className={cn(
+              "flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg",
+              "hover:bg-indigo-700 transition-colors shadow-sm"
+            )}
+          >
+            <Plus size={18} />
+            <span>เพิ่มงานใหม่</span>
+          </button>
+        </div>
       </div>
 
       {/* แสดงข้อผิดพลาด */}
@@ -256,31 +386,33 @@ export default function TasksPage() {
 
       {/* Kanban Board */}
       <div className="overflow-x-auto pb-4">
-        <div className="flex gap-6 min-w-[900px]">
-          {columns.map((column) => (
-            <div
-              key={column.id}
-              className={cn(
-                "flex-1 rounded-xl p-4 border-2 min-h-[400px]",
-                column.bgColor,
-                column.color
-              )}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, column.id)}
-            >
-              {/* หัวข้อคอลัมน์ */}
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-slate-700">{column.title}</h3>
-                <span className="bg-white px-2 py-1 rounded text-xs font-semibold text-slate-600 shadow-sm">
-                  {tasks.filter(t => t.status === column.id).length}
-                </span>
-              </div>
+        <div className="flex gap-6 min-w-max">
+          {columns.sort((a, b) => a.order - b.order).map((column) => {
+            const colors = columnColors[column.color] || columnColors.slate;
+            const columnTasks = tasks.filter(t => t.columnId === column.id);
+            
+            return (
+              <div
+                key={column.id}
+                className={cn(
+                  "w-80 rounded-xl p-4 border-2 min-h-[400px]",
+                  colors.bg,
+                  colors.border
+                )}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, column.id)}
+              >
+                {/* หัวข้อคอลัมน์ */}
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-slate-700">{column.name}</h3>
+                  <span className="bg-white px-2 py-1 rounded text-xs font-semibold text-slate-600 shadow-sm">
+                    {columnTasks.length}
+                  </span>
+                </div>
 
-              {/* รายการงาน */}
-              <div className="space-y-3">
-                {tasks
-                  .filter((task) => task.status === column.id)
-                  .map((task) => (
+                {/* รายการงาน */}
+                <div className="space-y-3">
+                  {columnTasks.map((task) => (
                     <div
                       key={task.id}
                       draggable
@@ -329,28 +461,27 @@ export default function TasksPage() {
                       )}
                     </div>
                   ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       {/* Modal สร้างงานใหม่ */}
-      {isModalOpen && (
+      {isTaskModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            {/* Header */}
             <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
               <h3 className="font-bold text-slate-800">เพิ่มงานใหม่</h3>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => setIsTaskModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"
               >
                 <X size={20} />
               </button>
             </div>
 
-            {/* Form */}
             <form onSubmit={handleCreateTask} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -372,11 +503,27 @@ export default function TasksPage() {
                 </label>
                 <textarea
                   rows={3}
-                  className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 outline-none resize-none"
                   placeholder="รายละเอียดเพิ่มเติม..."
                   value={newTask.description}
                   onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  คอลัมน์
+                </label>
+                <select
+                  className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                  value={newTask.columnId}
+                  onChange={(e) => setNewTask({ ...newTask, columnId: e.target.value })}
+                >
+                  <option value="">เลือกคอลัมน์...</option>
+                  {columns.map((col) => (
+                    <option key={col.id} value={col.id}>{col.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -420,6 +567,99 @@ export default function TasksPage() {
                 บันทึกงาน
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal จัดการคอลัมน์ */}
+      {isColumnModalOpen && canManageColumns && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="font-bold text-slate-800">จัดการคอลัมน์</h3>
+              <button
+                onClick={() => setIsColumnModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* รายการคอลัมน์ปัจจุบัน */}
+              <div>
+                <h4 className="text-sm font-medium text-slate-700 mb-3">คอลัมน์ปัจจุบัน</h4>
+                <div className="space-y-2">
+                  {columns.sort((a, b) => a.order - b.order).map((column) => (
+                    <div
+                      key={column.id}
+                      className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <GripVertical className="w-4 h-4 text-slate-400" />
+                        <div
+                          className={cn(
+                            "w-4 h-4 rounded",
+                            columnColors[column.color]?.bg || 'bg-slate-200'
+                          )}
+                        />
+                        <span className="font-medium text-slate-700">{column.name}</span>
+                        {column.isDefault && (
+                          <span className="text-xs text-slate-400">(ค่าเริ่มต้น)</span>
+                        )}
+                      </div>
+                      {!column.isDefault && (
+                        <button
+                          onClick={() => handleDeleteColumn(column.id)}
+                          className="text-slate-400 hover:text-rose-500 transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ฟอร์มเพิ่มคอลัมน์ใหม่ */}
+              <div className="border-t border-slate-200 pt-4">
+                <h4 className="text-sm font-medium text-slate-700 mb-3">เพิ่มคอลัมน์ใหม่</h4>
+                <form onSubmit={handleCreateColumn} className="space-y-3">
+                  <div>
+                    <input
+                      type="text"
+                      placeholder="ชื่อคอลัมน์"
+                      value={newColumn.name}
+                      onChange={(e) => setNewColumn({ ...newColumn, name: e.target.value })}
+                      className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-2">สี</label>
+                    <div className="flex gap-2">
+                      {Object.entries(columnColors).map(([color, styles]) => (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setNewColumn({ ...newColumn, color })}
+                          className={cn(
+                            "w-8 h-8 rounded-lg border-2 transition-all",
+                            styles.bg,
+                            newColumn.color === color ? 'border-slate-800' : 'border-transparent'
+                          )}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+                  >
+                    เพิ่มคอลัมน์
+                  </button>
+                </form>
+              </div>
+            </div>
           </div>
         </div>
       )}
