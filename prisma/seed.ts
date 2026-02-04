@@ -1,0 +1,203 @@
+/**
+ * ==================================================
+ * Prisma Seed - ข้อมูลเริ่มต้นสำหรับระบบ
+ * ==================================================
+ * ไฟล์นี้ใช้สำหรับสร้างข้อมูลเริ่มต้นในระบบ
+ * รวมถึงผู้ใช้ admin และข้อมูลตัวอย่าง
+ * 
+ * การใช้งาน:
+ * npx prisma db seed
+ * หรือ
+ * npm run db:seed
+ */
+
+import { PrismaClient, Role, TaskStatus, Priority, LeaveType, LeaveStatus } from '@prisma/client';
+import { hashPassword } from '../src/lib/security';
+
+const prisma = new PrismaClient();
+
+/**
+ * ฟังก์หลักสำหรับ seed ข้อมูล
+ */
+async function main() {
+  console.log('🌱 เริ่มต้น seed ข้อมูล...');
+
+  // ============================================
+  // สร้างผู้ใช้ Admin
+  // ============================================
+  console.log('👤 กำลังสร้างผู้ใช้ Admin...');
+  
+  const adminPassword = await hashPassword('admin123');
+  
+  const admin = await prisma.user.upsert({
+    where: { username: 'admin' },
+    update: {},
+    create: {
+      email: 'admin@ems.local',
+      username: 'admin',
+      password: adminPassword,
+      name: 'ผู้ดูแลระบบ',
+      role: Role.SUPER_ADMIN,
+      department: 'Management',
+      avatar: 'AD',
+      isActive: true,
+    },
+  });
+  
+  console.log('✅ สร้างผู้ใช้ Admin สำเร็จ:', admin.username);
+
+  // ============================================
+  // สร้างผู้ใช้ตัวอย่าง
+  // ============================================
+  console.log('👥 กำลังสร้างผู้ใช้ตัวอย่าง...');
+  
+  const userPassword = await hashPassword('password123');
+  
+  const sampleUsers = [
+    {
+      email: 'somchai@ems.local',
+      username: 'somchai',
+      name: 'สมชาย ใจดี',
+      role: Role.MANAGER,
+      department: 'Management',
+      avatar: 'SJ',
+    },
+    {
+      email: 'somying@ems.local',
+      username: 'somying',
+      name: 'สมหญิง จริงใจ',
+      role: Role.HR,
+      department: 'HR',
+      avatar: 'SC',
+    },
+    {
+      email: 'wichai@ems.local',
+      username: 'wichai',
+      name: 'วิชัย เก่งกาจ',
+      role: Role.EMPLOYEE,
+      department: 'Development',
+      avatar: 'WK',
+    },
+    {
+      email: 'naree@ems.local',
+      username: 'naree',
+      name: 'นารี รักงาน',
+      role: Role.EMPLOYEE,
+      department: 'Marketing',
+      avatar: 'NR',
+    },
+  ];
+  
+  for (const userData of sampleUsers) {
+    const user = await prisma.user.upsert({
+      where: { username: userData.username },
+      update: {},
+      create: {
+        ...userData,
+        password: userPassword,
+        isActive: true,
+      },
+    });
+    console.log('✅ สร้างผู้ใช้:', user.name);
+  }
+
+  // ============================================
+  // สร้างงานตัวอย่าง
+  // ============================================
+  console.log('📋 กำลังสร้างงานตัวอย่าง...');
+  
+  const sampleTasks = [
+    {
+      title: 'ออกแบบหน้า UI ใหม่',
+      description: 'ออกแบบหน้า Dashboard ใหม่ตาม requirements',
+      status: TaskStatus.TODO,
+      priority: Priority.HIGH,
+      assigneeId: 4, // สมหญิง
+    },
+    {
+      title: 'เชื่อมต่อ API ระบบ Login',
+      description: 'พัฒนา API สำหรับการเข้าสู่ระบบ',
+      status: TaskStatus.IN_PROGRESS,
+      priority: Priority.HIGH,
+      assigneeId: 3, // วิชัย
+    },
+    {
+      title: 'ทำรายงานสรุปประจำเดือน',
+      description: 'สรุปผลงานประจำเดือนมกราคม',
+      status: TaskStatus.DONE,
+      priority: Priority.MEDIUM,
+      assigneeId: 5, // นารี
+    },
+    {
+      title: 'อัปเดตเอกสารระบบ',
+      description: 'อัปเดตคู่มือการใช้งานระบบ',
+      status: TaskStatus.TODO,
+      priority: Priority.LOW,
+      assigneeId: null,
+    },
+  ];
+  
+  for (const taskData of sampleTasks) {
+    const task = await prisma.task.create({
+      data: taskData,
+    });
+    console.log('✅ สร้างงาน:', task.title);
+  }
+
+  // ============================================
+  // สร้างรายการลาตัวอย่าง
+  // ============================================
+  console.log('📅 กำลังสร้างรายการลาตัวอย่าง...');
+  
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  const sampleLeaves = [
+    {
+      userId: 4, // สมหญิง
+      type: LeaveType.SICK,
+      startDate: new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000), // 7 วันที่แล้ว
+      endDate: new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000),
+      reason: 'ไม่สบาย มีไข้',
+      status: LeaveStatus.APPROVED,
+      approvedBy: 2, // admin
+      approvedAt: new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000),
+    },
+    {
+      userId: 3, // วิชัย
+      type: LeaveType.PERSONAL,
+      startDate: tomorrow,
+      endDate: new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000),
+      reason: 'ทำธุระที่ธนาคาร',
+      status: LeaveStatus.PENDING,
+      approvedBy: null,
+      approvedAt: null,
+    },
+  ];
+  
+  for (const leaveData of sampleLeaves) {
+    const leave = await prisma.leave.create({
+      data: leaveData,
+    });
+    console.log('✅ สร้างรายการลา:', leave.id);
+  }
+
+  console.log('✨ Seed ข้อมูลเสร็จสมบูรณ์!');
+  console.log('');
+  console.log('🔑 ข้อมูลเข้าสู่ระบบ:');
+  console.log('   Username: admin');
+  console.log('   Password: admin123');
+}
+
+/**
+ * รัน seed และจัดการข้อผิดพลาด
+ */
+main()
+  .catch((e) => {
+    console.error('❌ เกิดข้อผิดพลาด:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

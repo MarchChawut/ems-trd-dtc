@@ -1,0 +1,205 @@
+/**
+ * ==================================================
+ * API Route: /api/tasks
+ * ==================================================
+ * API สำหรับจัดการงาน (CRUD operations)
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { createTaskSchema, sanitizeInput } from '@/lib/security';
+import { requireAuth } from '@/lib/auth';
+
+/**
+ * GET /api/tasks
+ * ดึงรายการงานทั้งหมด
+ * 
+ * Query Parameters:
+ * - status: กรองตามสถานะ (TODO, IN_PROGRESS, DONE)
+ * - priority: กรองตามความสำคัญ (LOW, MEDIUM, HIGH, URGENT)
+ * - assigneeId: กรองตามผู้รับผิดชอบ
+ * 
+ * Response:
+ * {
+ *   success: true,
+ *   data: Task[]
+ * }
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // ตรวจสอบการเข้าสู่ระบบ
+    const authResult = await requireAuth(request);
+    if (!authResult.success) {
+      return NextResponse.json(
+        { success: false, error: authResult.error, message: authResult.message },
+        { status: authResult.status }
+      );
+    }
+
+    // ดึง query parameters
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status');
+    const priority = searchParams.get('priority');
+    const assigneeId = searchParams.get('assigneeId');
+
+    // สร้าง where clause
+    const where: any = {};
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (priority) {
+      where.priority = priority;
+    }
+
+    if (assigneeId) {
+      where.assigneeId = parseInt(assigneeId);
+    }
+
+    // ดึงข้อมูลงาน
+    const tasks = await prisma.task.findMany({
+      where,
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+          },
+        },
+      },
+      orderBy: [
+        { priority: 'desc' },
+        { createdAt: 'desc' },
+      ],
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: tasks,
+    });
+
+  } catch (error) {
+    console.error('Get tasks error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'INTERNAL_ERROR',
+        message: 'เกิดข้อผิดพลาดภายในระบบ',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/tasks
+ * สร้างงานใหม่
+ * 
+ * Request Body:
+ * {
+ *   title: string;
+ *   description?: string;
+ *   priority: TaskPriority;
+ *   assigneeId?: number;
+ * }
+ * 
+ * Response:
+ * {
+ *   success: true,
+ *   data: Task,
+ *   message: 'สร้างงานสำเร็จ'
+ * }
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // ตรวจสอบการเข้าสู่ระบบ
+    const authResult = await requireAuth(request);
+    if (!authResult.success) {
+      return NextResponse.json(
+        { success: false, error: authResult.error, message: authResult.message },
+        { status: authResult.status }
+      );
+    }
+
+    // อ่านข้อมูลจาก request body
+    const body = await request.json();
+
+    // ตรวจสอบข้อมูลด้วย Zod Schema
+    const validationResult = createTaskSchema.safeParse(body);
+
+    if (!validationResult.success) {
+      const errors = validationResult.error.flatten().fieldErrors;
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'VALIDATION_ERROR',
+          message: 'ข้อมูลไม่ถูกต้อง',
+          details: errors,
+        },
+        { status: 400 }
+      );
+    }
+
+    const { title, description, priority, assigneeId } = validationResult.data;
+
+    // ตรวจสอบว่าผู้รับผิดชอบมีอยู่จริงหรือไม่ (ถ้าระบุ)
+    if (assigneeId) {
+      const assignee = await prisma.user.findUnique({
+        where: { id: assigneeId },
+      });
+
+      if (!assignee) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'ASSIGNEE_NOT_FOUND',
+            message: 'ไม่พบผู้รับผิดชอบ',
+          },
+          { status: 404 }
+        );
+      }
+    }
+
+    // สร้างงานใหม่
+    const task = await prisma.task.create({
+      data: {
+        title: sanitizeInput(title),
+        description: description ? sanitizeInput(description) : null,
+        priority,
+        status: 'TODO',
+        assigneeId: assigneeId || null,
+      },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: task,
+        message: 'สร้างงานสำเร็จ',
+      },
+      { status: 201 }
+    );
+
+  } catch (error) {
+    console.error('Create task error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'INTERNAL_ERROR',
+        message: 'เกิดข้อผิดพลาดภายในระบบ',
+      },
+      { status: 500 }
+    );
+  }
+}

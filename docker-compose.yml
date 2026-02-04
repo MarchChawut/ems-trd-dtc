@@ -1,0 +1,74 @@
+# ============================================
+# Docker Compose สำหรับ EMS (Employee Management System)
+# ใช้สำหรับรัน MariaDB บน Synology NAS หรือเครื่องอื่นๆ
+# ============================================
+
+version: '3.8'
+
+services:
+  # ============================================
+  # MariaDB Database
+  # ============================================
+  mariadb:
+    image: mariadb:10.11
+    container_name: ems-mariadb
+    restart: unless-stopped
+    environment:
+      # ตั้งค่ารหัสผ่าน root (ควรเปลี่ยนเป็นค่าที่ปลอดภัย)
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword123}
+      # สร้าง database อัตโนมัติ
+      MYSQL_DATABASE: ${DB_NAME:-ems_db}
+      # สร้าง user อัตโนมัติ
+      MYSQL_USER: ${DB_USER:-ems_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-emspassword123}
+    ports:
+      # เปิดพอร์ต 3306 สำหรับการเชื่อมต่อภายนอก
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      # เก็บข้อมูลถาวร
+      - mariadb_data:/var/lib/mysql
+      # โฟลเดอร์สำหรับ init scripts (ถ้ามี)
+      - ./init:/docker-entrypoint-initdb.d:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --innodb-buffer-pool-size=256M
+      --max-connections=100
+    networks:
+      - ems-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-rootpassword123}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================
+  # phpMyAdmin (Optional) - สำหรับจัดการฐานข้อมูลผ่าน Web
+  # ============================================
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: ems-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mariadb
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 0
+    ports:
+      - "${PMA_PORT:-8080}:80"
+    depends_on:
+      - mariadb
+    networks:
+      - ems-network
+    profiles:
+      - admin
+      # ใช้คำสั่ง: docker-compose --profile admin up -d
+
+volumes:
+  mariadb_data:
+    driver: local
+
+networks:
+  ems-network:
+    driver: bridge
