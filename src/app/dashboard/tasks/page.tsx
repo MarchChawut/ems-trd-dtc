@@ -4,7 +4,7 @@
  * ==================================================
  * แสดงงานในรูปแบบ Kanban Board พร้อมฟังก์ชัน:
  * - Drag & Drop
- * - จัดการ Column (เพิ่ม/ลบ/แก้ไข)
+ * - จัดการ Column (เพิ่ม/ลบ/ย้ายลำดับ)
  */
 
 'use client';
@@ -18,8 +18,9 @@ import {
   AlertCircle,
   X,
   Settings,
-  MoreVertical,
-  GripVertical
+  GripVertical,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Task, TaskPriority, User } from '@/types';
@@ -307,6 +308,56 @@ export default function TasksPage() {
   };
 
   /**
+   * ฟังก์ชันย้ายลำดับคอลัมน์ (ขึ้น)
+   */
+  const moveColumnUp = async (index: number) => {
+    if (index === 0) return;
+    
+    const sortedColumns = [...columns].sort((a, b) => a.order - b.order);
+    const newOrder = [...sortedColumns];
+    [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]];
+    
+    // อัปเดต UI ทันที
+    setColumns(newOrder.map((col, i) => ({ ...col, order: i })));
+    
+    // ส่งไป API
+    try {
+      await fetch('/api/columns/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columnIds: newOrder.map(c => c.id) }),
+      });
+    } catch (err) {
+      setError('ไม่สามารถบันทึกลำดับคอลัมน์ได้');
+    }
+  };
+
+  /**
+   * ฟังก์ชันย้ายลำดับคอลัมน์ (ลง)
+   */
+  const moveColumnDown = async (index: number) => {
+    const sortedColumns = [...columns].sort((a, b) => a.order - b.order);
+    if (index === sortedColumns.length - 1) return;
+    
+    const newOrder = [...sortedColumns];
+    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+    
+    // อัปเดต UI ทันที
+    setColumns(newOrder.map((col, i) => ({ ...col, order: i })));
+    
+    // ส่งไป API
+    try {
+      await fetch('/api/columns/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columnIds: newOrder.map(c => c.id) }),
+      });
+    } catch (err) {
+      setError('ไม่สามารถบันทึกลำดับคอลัมน์ได้');
+    }
+  };
+
+  /**
    * ฟังก์ชันลบงาน
    */
   const handleDeleteTask = async (taskId: number) => {
@@ -339,6 +390,9 @@ export default function TasksPage() {
       </div>
     );
   }
+
+  // เรียงคอลัมน์ตามลำดับ
+  const sortedColumns = [...columns].sort((a, b) => a.order - b.order);
 
   return (
     <div className="space-y-6">
@@ -387,7 +441,7 @@ export default function TasksPage() {
       {/* Kanban Board */}
       <div className="overflow-x-auto pb-4">
         <div className="flex gap-6 min-w-max">
-          {columns.sort((a, b) => a.order - b.order).map((column) => {
+          {sortedColumns.map((column) => {
             const colors = columnColors[column.color] || columnColors.slate;
             const columnTasks = tasks.filter(t => t.columnId === column.id);
             
@@ -520,7 +574,7 @@ export default function TasksPage() {
                   onChange={(e) => setNewTask({ ...newTask, columnId: e.target.value })}
                 >
                   <option value="">เลือกคอลัมน์...</option>
-                  {columns.map((col) => (
+                  {sortedColumns.map((col) => (
                     <option key={col.id} value={col.id}>{col.name}</option>
                   ))}
                 </select>
@@ -588,9 +642,9 @@ export default function TasksPage() {
             <div className="p-6 space-y-6">
               {/* รายการคอลัมน์ปัจจุบัน */}
               <div>
-                <h4 className="text-sm font-medium text-slate-700 mb-3">คอลัมน์ปัจจุบัน</h4>
+                <h4 className="text-sm font-medium text-slate-700 mb-3">คอลัมน์ปัจจุบัน (ลากเพื่อจัดเรียง)</h4>
                 <div className="space-y-2">
-                  {columns.sort((a, b) => a.order - b.order).map((column) => (
+                  {sortedColumns.map((column, index) => (
                     <div
                       key={column.id}
                       className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
@@ -608,14 +662,33 @@ export default function TasksPage() {
                           <span className="text-xs text-slate-400">(ค่าเริ่มต้น)</span>
                         )}
                       </div>
-                      {!column.isDefault && (
+                      <div className="flex items-center gap-1">
+                        {/* ปุ่มย้ายขึ้น */}
                         <button
-                          onClick={() => handleDeleteColumn(column.id)}
-                          className="text-slate-400 hover:text-rose-500 transition-colors"
+                          onClick={() => moveColumnUp(index)}
+                          disabled={index === 0}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
                         >
-                          <Trash2 size={16} />
+                          <ChevronLeft size={16} className="rotate-90" />
                         </button>
-                      )}
+                        {/* ปุ่มย้ายลง */}
+                        <button
+                          onClick={() => moveColumnDown(index)}
+                          disabled={index === sortedColumns.length - 1}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <ChevronRight size={16} className="rotate-90" />
+                        </button>
+                        {/* ปุ่มลบ */}
+                        {!column.isDefault && (
+                          <button
+                            onClick={() => handleDeleteColumn(column.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-100 rounded ml-2"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

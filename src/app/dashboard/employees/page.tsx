@@ -1,13 +1,14 @@
 /**
  * ==================================================
- * Employees Page - หน้ารายชื่อพนักงาน
+ * Employees Page - หน้ารายชื่อพนักงาน (อัปเดตเวอร์ชันใหม่)
  * ==================================================
- * แสดงรายชื่อพนักงานทั้งหมดและจัดการข้อมูล
+ * เพิ่มฟีเจอร์:
+ * - Import รายชื่อพนักงานจาก CSV
  */
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Plus, 
@@ -16,7 +17,11 @@ import {
   AlertCircle,
   Search,
   X,
-  Users
+  Users,
+  Upload,
+  Download,
+  FileSpreadsheet,
+  CheckCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { User, UserRole } from '@/types';
@@ -37,6 +42,7 @@ const roleConfig: Record<UserRole, { label: string; bg: string; text: string }> 
  */
 export default function EmployeesPage() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // State สำหรับเก็บรายชื่อพนักงาน
   const [users, setUsers] = useState<User[]>([]);
@@ -50,8 +56,23 @@ export default function EmployeesPage() {
   // State สำหรับเปิด/ปิด Modal สร้างพนักงาน
   const [isModalOpen, setIsModalOpen] = useState(false);
   
+  // State สำหรับเปิด/ปิด Modal Import
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  
   // State สำหรับค้นหา
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // State สำหรับ Import
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    imported: number;
+    skipped: number;
+    errors: string[];
+  } | null>(null);
+  
+  // State สำหรับ role ของผู้ใช้ปัจจุบัน
+  const [userRole, setUserRole] = useState<string>('');
   
   // State สำหรับข้อมูลพนักงานใหม่
   const [newUser, setNewUser] = useState({
@@ -69,6 +90,13 @@ export default function EmployeesPage() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
+        // ดึงข้อมูล session
+        const sessionRes = await fetch('/api/auth/session');
+        const sessionData = await sessionRes.json();
+        if (sessionData.success) {
+          setUserRole(sessionData.data.user.role);
+        }
+
         const response = await fetch('/api/users');
         const data = await response.json();
         
@@ -153,6 +181,84 @@ export default function EmployeesPage() {
   };
 
   /**
+   * ฟังก์ชันเลือกไฟล์
+   */
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.name.endsWith('.csv')) {
+        setError('รองรับเฉพาะไฟล์ CSV เท่านั้น');
+        return;
+      }
+      setSelectedFile(file);
+      setError(null);
+    }
+  };
+
+  /**
+   * ฟังก์ชัน Import พนักงาน
+   */
+  const handleImport = async () => {
+    if (!selectedFile) {
+      setError('กรุณาเลือกไฟล์ CSV');
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      setImportResult(null);
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const response = await fetch('/api/users/import', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'ไม่สามารถ import ข้อมูลได้');
+      }
+
+      setImportResult(data.data);
+
+      // รีโหลดข้อมูลพนักงาน
+      const usersResponse = await fetch('/api/users');
+      const usersData = await usersResponse.json();
+      if (usersData.success) {
+        setUsers(usersData.data);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  /**
+   * ดาวน์โหลดตัวอย่างไฟล์ CSV
+   */
+  const downloadTemplate = () => {
+    const headers = ['name', 'email', 'username', 'role', 'department'];
+    const example = [
+      'สมชาย ใจดี,somchai@example.com,somchai,EMPLOYEE,Development',
+      'สมหญิง รักงาน,somying@example.com,somying,HR,HR',
+      'วิชัย เก่งกาจ,wichai@example.com,wichai,MANAGER,Management',
+    ];
+    
+    const csv = '\uFEFF' + [headers.join(','), ...example].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'employees_template.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  /**
    * ฟังก์ชันกรองผู้ใช้ตามคำค้นหา
    */
   const filteredUsers = users.filter(user =>
@@ -160,6 +266,9 @@ export default function EmployeesPage() {
     user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.department?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // ตรวจสอบสิทธิ์
+  const canManageUsers = ['ADMIN', 'SUPER_ADMIN'].includes(userRole);
 
   // แสดง loading ขณะโหลดข้อมูล
   if (isLoading) {
@@ -180,16 +289,30 @@ export default function EmployeesPage() {
             สมาชิกทั้งหมด {users.length} คน
           </p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className={cn(
-            "flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg",
-            "hover:bg-indigo-700 transition-colors shadow-sm"
-          )}
-        >
-          <Plus size={18} />
-          <span>เพิ่มพนักงานใหม่</span>
-        </button>
+        {canManageUsers && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsImportModalOpen(true)}
+              className={cn(
+                "flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-lg",
+                "hover:bg-emerald-200 transition-colors"
+              )}
+            >
+              <Upload size={18} />
+              <span>Import CSV</span>
+            </button>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className={cn(
+                "flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg",
+                "hover:bg-indigo-700 transition-colors shadow-sm"
+              )}
+            >
+              <Plus size={18} />
+              <span>เพิ่มพนักงานใหม่</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* แสดงข้อผิดพลาด */}
@@ -221,13 +344,15 @@ export default function EmployeesPage() {
                 <th className="py-4 px-6 font-semibold text-sm text-slate-600">พนักงาน</th>
                 <th className="py-4 px-6 font-semibold text-sm text-slate-600">ตำแหน่ง/แผนก</th>
                 <th className="py-4 px-6 font-semibold text-sm text-slate-600">สถานะ</th>
-                <th className="py-4 px-6 font-semibold text-sm text-slate-600 text-right">จัดการ</th>
+                {canManageUsers && (
+                  <th className="py-4 px-6 font-semibold text-sm text-slate-600 text-right">จัดการ</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-12 text-center text-slate-400">
+                  <td colSpan={canManageUsers ? 4 : 3} className="py-12 text-center text-slate-400">
                     <Users className="w-12 h-12 mx-auto mb-4 text-slate-300" />
                     <p>ไม่พบข้อมูลพนักงาน</p>
                   </td>
@@ -272,15 +397,17 @@ export default function EmployeesPage() {
                         {user.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td className="py-4 px-6 text-right">
-                      <button
-                        onClick={() => handleDeleteUser(user.id)}
-                        className="text-slate-400 hover:text-rose-500 transition-colors p-2 hover:bg-rose-50 rounded-lg"
-                        title="ลบ"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </td>
+                    {canManageUsers && (
+                      <td className="py-4 px-6 text-right">
+                        <button
+                          onClick={() => handleDeleteUser(user.id)}
+                          className="text-slate-400 hover:text-rose-500 transition-colors p-2 hover:bg-rose-50 rounded-lg"
+                          title="ลบ"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -404,6 +531,135 @@ export default function EmployeesPage() {
                 บันทึก
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Import */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <Upload className="w-5 h-5 text-emerald-600" />
+                Import พนักงานจาก CSV
+              </h3>
+              <button
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setSelectedFile(null);
+                  setImportResult(null);
+                  setError(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* ดาวน์โหลดตัวอย่าง */}
+              <div className="bg-slate-50 p-4 rounded-lg">
+                <p className="text-sm font-medium text-slate-700 mb-2">รูปแบบไฟล์ CSV</p>
+                <p className="text-xs text-slate-500 mb-3">
+                  คอลัมน์ที่จำเป็น: name, email, username<br/>
+                  คอลัมน์เพิ่มเติม: role, department
+                </p>
+                <button
+                  onClick={downloadTemplate}
+                  className="text-sm text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
+                >
+                  <Download size={14} />
+                  ดาวน์โหลดไฟล์ตัวอย่าง
+                </button>
+              </div>
+
+              {/* อัปโหลดไฟล์ */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  เลือกไฟล์ CSV
+                </label>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors",
+                    selectedFile 
+                      ? "border-emerald-300 bg-emerald-50" 
+                      : "border-slate-300 hover:border-indigo-300 hover:bg-slate-50"
+                  )}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  {selectedFile ? (
+                    <div className="flex items-center justify-center gap-2 text-emerald-700">
+                      <FileSpreadsheet size={24} />
+                      <span className="font-medium">{selectedFile.name}</span>
+                    </div>
+                  ) : (
+                    <div className="text-slate-500">
+                      <Upload className="w-8 h-8 mx-auto mb-2" />
+                      <p>คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวาง</p>
+                      <p className="text-xs mt-1">รองรับเฉพาะไฟล์ CSV</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ผลลัพธ์ Import */}
+              {importResult && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-emerald-700 mb-2">
+                    <CheckCircle size={20} />
+                    <span className="font-medium">Import สำเร็จ</span>
+                  </div>
+                  <div className="text-sm text-emerald-600 space-y-1">
+                    <p>นำเข้าสำเร็จ: {importResult.imported} รายการ</p>
+                    <p>ข้าม (ซ้ำ): {importResult.skipped} รายการ</p>
+                    {importResult.errors.length > 0 && (
+                      <div className="mt-2">
+                        <p className="font-medium">ข้อผิดพลาด:</p>
+                        <ul className="list-disc list-inside text-xs mt-1">
+                          {importResult.errors.slice(0, 5).map((err, i) => (
+                            <li key={i}>{err}</li>
+                          ))}
+                          {importResult.errors.length > 5 && (
+                            <li>...และอีก {importResult.errors.length - 5} รายการ</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={handleImport}
+                disabled={!selectedFile || isImporting}
+                className={cn(
+                  "w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium transition-colors",
+                  "flex items-center justify-center gap-2",
+                  (!selectedFile || isImporting) && "opacity-70 cursor-not-allowed"
+                )}
+              >
+                {isImporting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>กำลัง Import...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-5 h-5" />
+                    <span>Import พนักงาน</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

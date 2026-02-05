@@ -6,6 +6,7 @@
  * - Dashboard สถิติรายบุคคล
  * - ค้นหาด้วยชื่อหรือวันที่
  * - เลือกชื่อผู้ขอลาได้
+ * - Export ข้อมูลการลา
  */
 
 'use client';
@@ -25,10 +26,12 @@ import {
   Users,
   BarChart3,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Leave, LeaveType, LeaveStatus, User, UserRole } from '@/types';
+import { Leave, LeaveType, LeaveStatus, User } from '@/types';
 
 /**
  * สีและข้อความของประเภทการลา
@@ -90,6 +93,9 @@ export default function LeavesPage() {
   // State สำหรับเปิด/ปิด Modal สร้างการลา
   const [isModalOpen, setIsModalOpen] = useState(false);
   
+  // State สำหรับเปิด/ปิด Modal Export
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  
   // State สำหรับแสดง/ซ่อน Dashboard
   const [showDashboard, setShowDashboard] = useState(false);
   
@@ -97,6 +103,12 @@ export default function LeavesPage() {
   const [searchType, setSearchType] = useState<'name' | 'date'>('name');
   const [searchName, setSearchName] = useState('');
   const [searchDate, setSearchDate] = useState('');
+  
+  // State สำหรับ Export
+  const [exportName, setExportName] = useState('');
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
   
   // State สำหรับข้อมูลการลาใหม่
   const [newLeave, setNewLeave] = useState({
@@ -211,6 +223,57 @@ export default function LeavesPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    }
+  };
+
+  /**
+   * Export ข้อมูลการลา
+   */
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      
+      let url = '/api/leaves/export?';
+      const params: string[] = [];
+      
+      if (exportName) {
+        params.push(`name=${encodeURIComponent(exportName)}`);
+      }
+      if (exportStartDate) {
+        params.push(`startDate=${exportStartDate}`);
+      }
+      if (exportEndDate) {
+        params.push(`endDate=${exportEndDate}`);
+      }
+      
+      url += params.join('&');
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'ไม่สามารถ export ข้อมูลได้');
+      }
+      
+      // ดาวน์โหลดไฟล์
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `leaves_export_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      setIsExportModalOpen(false);
+      setExportName('');
+      setExportStartDate('');
+      setExportEndDate('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -333,7 +396,7 @@ export default function LeavesPage() {
             จัดการและบันทึกประวัติการลาของพนักงาน
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={toggleDashboard}
             className={cn(
@@ -346,6 +409,16 @@ export default function LeavesPage() {
             <BarChart3 size={18} />
             <span>สถิติรายบุคคล</span>
             {showDashboard ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+          <button
+            onClick={() => setIsExportModalOpen(true)}
+            className={cn(
+              "flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-lg",
+              "hover:bg-emerald-200 transition-colors"
+            )}
+          >
+            <Download size={18} />
+            <span>Export</span>
           </button>
           <button
             onClick={() => setIsModalOpen(true)}
@@ -706,6 +779,101 @@ export default function LeavesPage() {
                 บันทึกข้อมูล
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Export */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                Export ข้อมูลการลา
+              </h3>
+              <button
+                onClick={() => setIsExportModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* ค้นหาด้วยชื่อ */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  ชื่อพนักงาน (ไม่บังคับ)
+                </label>
+                <select
+                  className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={exportName}
+                  onChange={(e) => setExportName(e.target.value)}
+                >
+                  <option value="">ทั้งหมด</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.name}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* ช่วงวันที่ */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    ตั้งแต่วันที่
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                    value={exportStartDate}
+                    onChange={(e) => setExportStartDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    ถึงวันที่
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                    value={exportEndDate}
+                    onChange={(e) => setExportEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="text-sm text-slate-500 bg-slate-50 p-3 rounded-lg">
+                <p>ไฟล์จะถูกดาวน์โหลดในรูปแบบ CSV</p>
+                <p className="text-xs mt-1">คอลัมน์: รหัส, ชื่อ, แผนก, ประเภท, วันที่, จำนวนวัน, เหตุผล, สถานะ</p>
+              </div>
+
+              <button
+                onClick={handleExport}
+                disabled={isExporting}
+                className={cn(
+                  "w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium transition-colors",
+                  "flex items-center justify-center gap-2",
+                  isExporting && "opacity-70 cursor-not-allowed"
+                )}
+              >
+                {isExporting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>กำลัง Export...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-5 h-5" />
+                    <span>ดาวน์โหลด CSV</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

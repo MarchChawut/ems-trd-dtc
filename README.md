@@ -328,3 +328,18 @@ EMS Development Team
 ## การสนับสนุน
 
 หากมีปัญหาหรือคำถาม กรุณาติดต่อผู้ดูแลระบบ
+
+----------------- 
+
+## after clone the project from github
+pnpm i
+↓
+สร้าง .env (DATABASE_URL)
+↓
+npx prisma db push
+↓
+npx prisma generate
+↓
+pnpm run db:seed (ถ้ามี)
+↓
+pnpm dev
