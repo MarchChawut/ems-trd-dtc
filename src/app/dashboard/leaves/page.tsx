@@ -441,6 +441,72 @@ export default function LeavesPage() {
         </div>
       )}
 
+      {/* ส่วนค้นหา */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+        <div className="flex flex-col sm:flex-row gap-4">
+          {/* เลือกประเภทการค้นหา */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSearchType('name')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                searchType === 'name'
+                  ? "bg-indigo-600 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              )}
+            >
+              ค้นหาด้วยชื่อ
+            </button>
+            <button
+              onClick={() => setSearchType('date')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                searchType === 'date'
+                  ? "bg-indigo-600 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              )}
+            >
+              ค้นหาด้วยวันที่
+            </button>
+          </div>
+
+          {/* ช่องค้นหา */}
+          <div className="flex-1 flex gap-2">
+            {searchType === 'name' ? (
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="พิมพ์ชื่อพนักงาน..."
+                  value={searchName}
+                  onChange={(e) => setSearchName(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                />
+              </div>
+            ) : (
+              <input
+                type="date"
+                value={searchDate}
+                onChange={(e) => setSearchDate(e.target.value)}
+                className="flex-1 px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+              />
+            )}
+            <button
+              onClick={handleSearch}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              ค้นหา
+            </button>
+            <button
+              onClick={resetSearch}
+              className="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+            >
+              รีเซ็ต
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Dashboard สถิติรายบุคคล */}
       {showDashboard && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -516,71 +582,7 @@ export default function LeavesPage() {
         </div>
       )}
 
-      {/* ส่วนค้นหา */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* เลือกประเภทการค้นหา */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSearchType('name')}
-              className={cn(
-                "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-                searchType === 'name'
-                  ? "bg-indigo-600 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              )}
-            >
-              ค้นหาด้วยชื่อ
-            </button>
-            <button
-              onClick={() => setSearchType('date')}
-              className={cn(
-                "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-                searchType === 'date'
-                  ? "bg-indigo-600 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              )}
-            >
-              ค้นหาด้วยวันที่
-            </button>
-          </div>
-
-          {/* ช่องค้นหา */}
-          <div className="flex-1 flex gap-2">
-            {searchType === 'name' ? (
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="พิมพ์ชื่อพนักงาน..."
-                  value={searchName}
-                  onChange={(e) => setSearchName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                />
-              </div>
-            ) : (
-              <input
-                type="date"
-                value={searchDate}
-                onChange={(e) => setSearchDate(e.target.value)}
-                className="flex-1 px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-              />
-            )}
-            <button
-              onClick={handleSearch}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-            >
-              ค้นหา
-            </button>
-            <button
-              onClick={resetSearch}
-              className="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
-            >
-              รีเซ็ต
-            </button>
-          </div>
-        </div>
-      </div>
+      
 
       {/* รายการลา */}
       <div className="space-y-4">

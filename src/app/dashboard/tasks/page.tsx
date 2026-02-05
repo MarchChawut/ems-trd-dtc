@@ -277,10 +277,10 @@ export default function TasksPage() {
    */
   const handleDeleteColumn = async (columnId: number) => {
     const column = columns.find(c => c.id === columnId);
-    if (column?.isDefault) {
-      alert('ไม่สามารถลบคอลัมน์เริ่มต้นได้');
-      return;
-    }
+    // if (column?.isDefault) {
+    //   alert('ไม่สามารถลบคอลัมน์เริ่มต้นได้');
+    //   return;
+    // }
     
     // ตรวจสอบว่ามีงานในคอลัมน์หรือไม่
     const tasksInColumn = tasks.filter(t => t.columnId === columnId);
