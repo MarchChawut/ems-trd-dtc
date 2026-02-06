@@ -277,13 +277,9 @@ export default function TasksPage() {
    */
   const handleDeleteColumn = async (columnId: number) => {
     const column = columns.find(c => c.id === columnId);
-    // if (column?.isDefault) {
-    //   alert('ไม่สามารถลบคอลัมน์เริ่มต้นได้');
-    //   return;
-    // }
     
-    // ตรวจสอบว่ามีงานในคอลัมน์หรือไม่
-    const tasksInColumn = tasks.filter(t => t.columnId === columnId);
+    // ตรวจสอบว่ามีงานในคอลัมน์หรือไม่ (แปลงเป็น number เพื่อเปรียบเทียบ)
+    const tasksInColumn = tasks.filter(t => Number(t.columnId) === columnId);
     if (tasksInColumn.length > 0) {
       alert(`ไม่สามารถลบคอลัมน์นี้ได้ เนื่องจากมีงาน ${tasksInColumn.length} รายการอยู่ในคอลัมน์`);
       return;
@@ -439,7 +435,7 @@ export default function TasksPage() {
       )}
 
       {/* Kanban Board */}
-      <div className="overflow-x-auto pb-4">
+      <div className="overflow-x-auto pb-4 bg-slate-50 rounded-lg p-4 min-h-[calc(100vh-200px)]">
         <div className="flex gap-6 min-w-max">
           {sortedColumns.map((column) => {
             const colors = columnColors[column.color] || columnColors.slate;
@@ -704,6 +700,14 @@ export default function TasksPage() {
                       placeholder="ชื่อคอลัมน์"
                       value={newColumn.name}
                       onChange={(e) => setNewColumn({ ...newColumn, name: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (newColumn.name.trim()) {
+                            handleCreateColumn(e);
+                          }
+                        }
+                      }}
                       className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>

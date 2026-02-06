@@ -209,7 +209,7 @@ export async function DELETE(
 
     // ตรวจสอบว่ามีงานในคอลัมน์นี้หรือไม่
     const tasksInColumn = await prisma.task.count({
-      where: { status: existingColumn.id.toString() },
+      where: { columnId: columnId },
     });
 
     if (tasksInColumn > 0) {
