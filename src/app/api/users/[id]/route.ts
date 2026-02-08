@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sanitizeInput, hashPassword } from '@/lib/security';
 import { requireAuth, isAdmin } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 import { z } from 'zod';
 
 // Schema สำหรับอัปเดตผู้ใช้
@@ -92,7 +93,7 @@ export async function GET(
     });
 
   } catch (error) {
-    console.error('Get user error:', error);
+    logger.error('Get user error', { error });
     return NextResponse.json(
       {
         success: false,
@@ -275,7 +276,7 @@ export async function PATCH(
     });
 
   } catch (error) {
-    console.error('Update user error:', error);
+    logger.error('Update user error', { error });
     return NextResponse.json(
       {
         success: false,
@@ -376,7 +377,7 @@ export async function DELETE(
     });
 
   } catch (error) {
-    console.error('Delete user error:', error);
+    logger.error('Delete user error', { error });
     return NextResponse.json(
       {
         success: false,

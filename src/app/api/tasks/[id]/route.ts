@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sanitizeInput } from '@/lib/security';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * PATCH /api/tasks/[id]
@@ -165,7 +166,7 @@ export async function PATCH(
     });
 
   } catch (error) {
-    console.error('Update task error:', error);
+    logger.error('Update task error', { error });
     return NextResponse.json(
       {
         success: false,
@@ -241,7 +242,7 @@ export async function DELETE(
     });
 
   } catch (error) {
-    console.error('Delete task error:', error);
+    logger.error('Delete task error', { error });
     return NextResponse.json(
       {
         success: false,

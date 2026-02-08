@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * PATCH /api/leaves/[id]
@@ -141,7 +142,7 @@ export async function PATCH(
     });
 
   } catch (error) {
-    console.error('Update leave error:', error);
+    logger.error('Update leave error', { error });
     return NextResponse.json(
       {
         success: false,
@@ -230,7 +231,7 @@ export async function DELETE(
     });
 
   } catch (error) {
-    console.error('Delete leave error:', error);
+    logger.error('Delete leave error', { error });
     return NextResponse.json(
       {
         success: false,

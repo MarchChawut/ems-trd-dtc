@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/dashboard
@@ -131,7 +132,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Dashboard error:', error);
+    logger.error('Dashboard error', { error });
     return NextResponse.json(
       {
         success: false,

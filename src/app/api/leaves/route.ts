@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createLeaveSchema, sanitizeInput } from '@/lib/security';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/leaves
@@ -84,7 +85,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Get leaves error:', error);
+    logger.error('Get leaves error', { error });
     return NextResponse.json(
       {
         success: false,
@@ -206,7 +207,7 @@ export async function POST(request: NextRequest) {
     );
 
   } catch (error) {
-    console.error('Create leave error:', error);
+    logger.error('Create leave error', { error });
     return NextResponse.json(
       {
         success: false,

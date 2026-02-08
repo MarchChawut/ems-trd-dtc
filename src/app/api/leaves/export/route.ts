@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * แปลงข้อมูลเป็น CSV format
@@ -176,7 +177,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Export leaves error:', error);
+    logger.error('Export leaves error', { error });
     return NextResponse.json(
       {
         success: false,

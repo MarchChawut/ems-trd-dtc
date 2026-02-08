@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createTaskSchema, sanitizeInput } from '@/lib/security';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/tasks
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Get tasks error:', error);
+    logger.error('Get tasks error', { error });
     return NextResponse.json(
       {
         success: false,
@@ -213,7 +214,7 @@ export async function POST(request: NextRequest) {
     );
 
   } catch (error) {
-    console.error('Create task error:', error);
+    logger.error('Create task error', { error });
     return NextResponse.json(
       {
         success: false,

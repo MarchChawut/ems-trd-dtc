@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 import { z } from 'zod';
 
 // Schema สำหรับตรวจสอบข้อมูล
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Reorder columns error:', error);
+    logger.error('Reorder columns error', { error });
     return NextResponse.json(
       {
         success: false,

@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 import { z } from 'zod';
 
 // Schema สำหรับสร้างคอลัมน์
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Get columns error:', error);
+    logger.error('Get columns error', { error });
     return NextResponse.json(
       {
         success: false,
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
     );
 
   } catch (error) {
-    console.error('Create column error:', error);
+    logger.error('Create column error', { error });
     return NextResponse.json(
       {
         success: false,

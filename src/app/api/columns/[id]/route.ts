@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 import { z } from 'zod';
 
 // Schema สำหรับอัปเดตคอลัมน์
@@ -130,7 +131,7 @@ export async function PATCH(
     });
 
   } catch (error) {
-    console.error('Update column error:', error);
+    logger.error('Update column error', { error });
     return NextResponse.json(
       {
         success: false,
@@ -234,7 +235,7 @@ export async function DELETE(
     });
 
   } catch (error) {
-    console.error('Delete column error:', error);
+    logger.error('Delete column error', { error });
     return NextResponse.json(
       {
         success: false,

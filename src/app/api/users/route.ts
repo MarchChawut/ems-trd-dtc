@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createUserSchema, hashPassword, generateAvatarInitials, sanitizeInput } from '@/lib/security';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/users
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Get users error:', error);
+    logger.error('Get users error', { error });
     return NextResponse.json(
       {
         success: false,
@@ -246,7 +247,7 @@ export async function POST(request: NextRequest) {
     );
 
   } catch (error) {
-    console.error('Create user error:', error);
+    logger.error('Create user error', { error });
     return NextResponse.json(
       {
         success: false,

@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger';
 import { cookies } from 'next/headers';
 
 /**
@@ -111,7 +112,7 @@ export async function GET(request: NextRequest) {
     });
     
   } catch (error) {
-    console.error('Session check error:', error);
+    logger.error('Session check error', { error });
     
     return NextResponse.json(
       {

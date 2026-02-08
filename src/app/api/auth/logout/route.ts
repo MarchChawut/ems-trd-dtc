@@ -7,6 +7,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 import { cookies } from 'next/headers';
 
 /**
@@ -41,7 +43,7 @@ export async function POST(request: NextRequest) {
     });
     
   } catch (error) {
-    console.error('Logout error:', error);
+    logger.error('Logout error', { error });
     
     return NextResponse.json(
       {

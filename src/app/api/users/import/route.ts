@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 import { hashPassword } from '@/lib/security';
+import { logger } from '@/lib/logger';
 
 /**
  * แยกข้อมูล CSV เป็น array
@@ -250,7 +251,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Import users error:', error);
+    logger.error('Import users error', { error });
     return NextResponse.json(
       {
         success: false,

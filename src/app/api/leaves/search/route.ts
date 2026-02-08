@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/leaves/search
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Search leaves error:', error);
+    logger.error('Search leaves error', { error });
     return NextResponse.json(
       {
         success: false,

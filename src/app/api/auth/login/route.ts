@@ -11,11 +11,11 @@ import { prisma } from '@/lib/prisma';
 import { 
   verifyPassword, 
   loginSchema, 
-  isRateLimited, 
-  recordLoginAttempt,
   generateSecureToken,
   generateAvatarInitials 
 } from '@/lib/security';
+import { dbRateLimit } from '@/lib/rate-limit-db';
+import { logger } from '@/lib/logger';
 import { cookies } from 'next/headers';
 
 /**
@@ -59,13 +59,14 @@ function getClientIp(request: NextRequest): string {
  * }
  */
 export async function POST(request: NextRequest) {
+  // ดึง IP address ของ client (declare outside try for error logging)
+  const clientIp = getClientIp(request);
+  
   try {
-    // ดึง IP address ของ client
-    const clientIp = getClientIp(request);
-    
-    // ตรวจสอบ Rate Limiting (ป้องกัน Brute Force)
-    if (isRateLimited(clientIp)) {
-      // บันทึกการพยายามเข้าสู่ระบบที่ถูกบล็อก
+    // ตรวจสอบ Rate Limiting (ป้องกัน Brute Force) แบบ Database
+    const isLimited = await dbRateLimit.isRateLimited(clientIp);
+    if (isLimited) {
+      logger.warn('Blocked login attempt due to rate limit', { ip: clientIp });
       await prisma.loginAttempt.create({
         data: {
           username: 'unknown',
@@ -115,7 +116,6 @@ export async function POST(request: NextRequest) {
     // ตรวจสอบว่าผู้ใช้มีอยู่หรือไม่
     if (!user) {
       // บันทึกการพยายามเข้าสู่ระบบที่ล้มเหลว
-      recordLoginAttempt(clientIp, false);
       await prisma.loginAttempt.create({
         data: {
           username,
@@ -162,8 +162,6 @@ export async function POST(request: NextRequest) {
     
     if (!isPasswordValid) {
       // บันทึกการพยายามเข้าสู่ระบบที่ล้มเหลว
-      recordLoginAttempt(clientIp, false);
-      recordLoginAttempt(username, false);
       await prisma.loginAttempt.create({
         data: {
           userId: user.id,
@@ -185,8 +183,10 @@ export async function POST(request: NextRequest) {
     }
     
     // เข้าสู่ระบบสำเร็จ - ล้างข้อมูลการพยายามที่ล้มเหลว
-    recordLoginAttempt(clientIp, true);
-    recordLoginAttempt(username, true);
+    await dbRateLimit.clearAttempts(clientIp);
+    await dbRateLimit.clearAttempts(username);
+    
+    logger.info('User logged in successfully', { userId: user.id, username, ip: clientIp });
     
     // สร้าง session token
     const token = generateSecureToken(64);
@@ -243,7 +243,7 @@ export async function POST(request: NextRequest) {
     });
     
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error', { error, ip: clientIp });
     
     return NextResponse.json(
       {
