@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { type, startDate, endDate, reason } = validationResult.data;
+    const { type, startDate, endDate, reason, isHalfDay, hours } = validationResult.data;
 
     // กำหนด userId สำหรับการลา
     let targetUserId = currentUser.id;
@@ -175,6 +175,22 @@ export async function POST(request: NextRequest) {
       targetUserId = body.userId;
     }
 
+    // คำนวณจำนวนวันลา
+    let totalDays = 0;
+    if (hours && hours > 0) {
+      // ลาเป็นชั่วโมง (4 ชม. = 0.5 วัน, 8 ชม. = 1 วัน)
+      totalDays = hours / 8;
+    } else if (isHalfDay) {
+      // ลาครึ่งวัน = 0.5 วัน
+      totalDays = 0.5;
+    } else {
+      // คำนวณจากวันที่
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    }
+
     // สร้างรายการลาใหม่
     const leave = await prisma.leave.create({
       data: {
@@ -184,6 +200,9 @@ export async function POST(request: NextRequest) {
         endDate: new Date(endDate),
         reason: sanitizeInput(reason),
         status: 'PENDING',
+        isHalfDay: isHalfDay || false,
+        hours: hours || null,
+        totalDays,
       },
       include: {
         user: {
@@ -192,6 +211,7 @@ export async function POST(request: NextRequest) {
             name: true,
             avatar: true,
             department: true,
+            division: true,
           },
         },
       },

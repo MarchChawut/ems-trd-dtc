@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Leave, LeaveType, LeaveStatus, User } from '@/types';
+import LeaveForm from '@/components/leaves/LeaveForm';
 
 /**
  * สีและข้อความของประเภทการลา
@@ -40,6 +41,8 @@ const leaveTypeConfig: Record<LeaveType, { label: string; bg: string; text: stri
   SICK: { label: 'ลาป่วย', bg: 'bg-rose-100', text: 'text-rose-600', icon: '🏥' },
   PERSONAL: { label: 'ลากิจ', bg: 'bg-amber-100', text: 'text-amber-600', icon: '💼' },
   VACATION: { label: 'ลาพักร้อน', bg: 'bg-blue-100', text: 'text-blue-600', icon: '🏖️' },
+  MATERNITY: { label: 'ลาคลอดบุตร', bg: 'bg-pink-100', text: 'text-pink-600', icon: '👶' },
+  ORDINATION: { label: 'ลาบวช', bg: 'bg-purple-100', text: 'text-purple-600', icon: '🧘' },
   OTHER: { label: 'อื่นๆ', bg: 'bg-slate-100', text: 'text-slate-600', icon: '📝' },
 };
 
@@ -98,6 +101,10 @@ export default function LeavesPage() {
   
   // State สำหรับแสดง/ซ่อน Dashboard
   const [showDashboard, setShowDashboard] = useState(false);
+  
+  // State สำหรับแสดง LeaveForm
+  const [selectedLeave, setSelectedLeave] = useState<Leave | null>(null);
+  const [showLeaveForm, setShowLeaveForm] = useState(false);
   
   // State สำหรับค้นหา
   const [searchType, setSearchType] = useState<'name' | 'date'>('name');
@@ -658,6 +665,16 @@ export default function LeavesPage() {
 
                 {/* ปุ่มดำเนินการ */}
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setSelectedLeave(leave);
+                      setShowLeaveForm(true);
+                    }}
+                    className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                    title="พิมพ์แบบฟอร์ม"
+                  >
+                    <FileSpreadsheet size={20} />
+                  </button>
                   {leave.status === 'PENDING' && (
                     <>
                       <button
@@ -739,6 +756,8 @@ export default function LeavesPage() {
                   <option value="SICK">ลาป่วย</option>
                   <option value="PERSONAL">ลากิจ</option>
                   <option value="VACATION">ลาพักร้อน</option>
+                  <option value="MATERNITY">ลาคลอดบุตร</option>
+                  <option value="ORDINATION">ลาบวช</option>
                   <option value="OTHER">อื่นๆ</option>
                 </select>
               </div>
@@ -885,6 +904,35 @@ export default function LeavesPage() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LeaveForm Modal */}
+      {showLeaveForm && selectedLeave && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50 sticky top-0">
+              <h3 className="font-bold text-slate-800">แบบใบลาป่วย ลาคลอดบุตร ลากิจ</h3>
+              <button
+                onClick={() => {
+                  setShowLeaveForm(false);
+                  setSelectedLeave(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4">
+              <LeaveForm 
+                leave={selectedLeave} 
+                onClose={() => {
+                  setShowLeaveForm(false);
+                  setSelectedLeave(null);
+                }}
+              />
             </div>
           </div>
         </div>

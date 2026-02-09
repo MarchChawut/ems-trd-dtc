@@ -22,7 +22,11 @@ model User {
   password  String   @db.VarChar(255) // เก็บรหัสผ่านที่เข้ารหัสแล้ว
   name      String   @db.VarChar(100)
   role      Role     @default(EMPLOYEE)
-  department String? @db.VarChar(100)
+  department String? @db.VarChar(100) // กอง เช่น กองการศึกษา วิจัย และพัฒนา
+  division   String? @db.VarChar(200) // สังกัด เช่น ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง
+  position   String? @db.VarChar(100) // ตำแหน่ง เช่น จนท.ฝ่ายธุรการ, ผู้อำนวยการกอง
+  positionSecond String? @db.VarChar(100) // ตำแหน่งรอง เช่น ลูกจ้างชั่วคราวรายเดือน, เจ้าหน้าที่งานในพระองค์
+  positionLevel Int?    // ระดับ (สำหรับเจ้าหน้าที่งานในพระองค์ 1-11)
   avatar    String?  @db.VarChar(10) // ตัวย่อชื่อสำหรับแสดง avatar
   isActive  Boolean  @default(true)
   
@@ -137,6 +141,11 @@ model Leave {
   approvedBy  Int?        // ID ของผู้อนุมัติ
   approvedAt  DateTime?   
   
+  // ข้อมูลเพิ่มเติมสำหรับฟอร์ม
+  isHalfDay   Boolean     @default(false) // ลาครึ่งวันหรือไม่
+  hours       Float?      // จำนวนชั่วโมงที่ลา (ถ้าลาเป็นชั่วโมง)
+  totalDays   Float       @default(0) // จำนวนวันลารวม (คำนวณจากกฎ)
+  
   // ความสัมพันธ์
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   
@@ -147,6 +156,61 @@ model Leave {
   @@index([status])
   @@index([startDate, endDate])
   @@map("leaves")
+}
+
+// ============================================
+// Model: LeaveRule - กฎเกณฑ์การลา (Admin กำหนด)
+// ============================================
+model LeaveRule {
+  id              Int      @id @default(autoincrement())
+  name            String   @db.VarChar(100)
+  startTime       String   @db.VarChar(5) // เวลาเริ่มต้น เช่น "08:30"
+  endTime         String   @db.VarChar(5) // เวลาสิ้นสุด เช่น "16:30"
+  fullDayHours     Float    @default(8) // จำนวนชั่วโมง = 1 วัน
+  halfDayHours     Float    @default(4) // จำนวนชั่วโมง = 0.5 วัน
+  maxConsecutiveDays Int   @default(30) // จำนวนวันลาติดต่อกันสูงสุด
+  isActive        Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@map("leave_rules")
+}
+
+// ============================================
+// Model: Position - ตำแหน่งหลัก (Admin จัดการได้)
+// ============================================
+model Position {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(100) // ชื่อตำแหน่ง เช่น จนท.ฝ่ายธุรการ
+  description String?  @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  order       Int      @default(0) // ลำดับการแสดงผล
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([isActive, order])
+  @@map("positions")
+}
+
+// ============================================
+// Model: PositionSecond - ตำแหน่งรอง (Admin จัดการได้)
+// ============================================
+model PositionSecond {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(100) // ชื่อตำแหน่งรอง เช่น เจ้าหน้าที่งานในพระองค์
+  description String?  @db.VarChar(255)
+  hasLevel    Boolean  @default(false) // มีระดับหรือไม่ (1-11)
+  maxLevel    Int?     // ระดับสูงสุด (ถ้ามี)
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([isActive, order])
+  @@map("position_seconds")
 }
 
 // ============================================
@@ -179,10 +243,12 @@ enum Priority {
 
 // ประเภทการลา
 enum LeaveType {
-  SICK      // ลาป่วย
-  PERSONAL  // ลากิจ
-  VACATION  // ลาพักร้อน
-  OTHER     // อื่นๆ
+  SICK        // ลาป่วย
+  PERSONAL    // ลากิจ
+  VACATION    // ลาพักร้อน
+  MATERNITY   // ลาคลอดบุตร
+  ORDINATION  // ลาบวช
+  OTHER       // อื่นๆ
 }
 
 // สถานะการลา

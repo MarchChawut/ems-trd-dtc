@@ -24,7 +24,11 @@ export interface User {
   username: string;
   name: string;
   role: UserRole;
-  department: string | null;
+  department: string | null; // กอง เช่น กองการศึกษา วิจัย และพัฒนา
+  division: string | null; // สังกัด เช่น ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง
+  position: string | null; // ตำแหน่ง เช่น จนท.ฝ่ายธุรการ
+  positionSecond: string | null; // ตำแหน่งรอง เช่น เจ้าหน้าที่งานในพระองค์
+  positionLevel: number | null; // ระดับ 1-11
   avatar: string | null;
   isActive: boolean;
   createdAt: Date;
@@ -53,6 +57,10 @@ export interface CreateUserInput {
   name: string;
   role: UserRole;
   department?: string;
+  division?: string;
+  position?: string;
+  positionSecond?: string;
+  positionLevel?: number;
 }
 
 /**
@@ -63,6 +71,10 @@ export interface UpdateUserInput {
   name?: string;
   role?: UserRole;
   department?: string;
+  division?: string;
+  position?: string;
+  positionSecond?: string;
+  positionLevel?: number;
   isActive?: boolean;
 }
 
@@ -131,7 +143,7 @@ export interface UpdateTaskInput {
 /**
  * ประเภทการลา
  */
-export type LeaveType = 'SICK' | 'PERSONAL' | 'VACATION' | 'OTHER';
+export type LeaveType = 'SICK' | 'PERSONAL' | 'VACATION' | 'MATERNITY' | 'ORDINATION' | 'OTHER';
 
 /**
  * สถานะการลา
@@ -152,6 +164,9 @@ export interface Leave {
   status: LeaveStatus;
   approvedBy: number | null;
   approvedAt: Date | null;
+  isHalfDay: boolean;
+  hours: number | null;
+  totalDays: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -164,6 +179,8 @@ export interface CreateLeaveInput {
   startDate: string; // YYYY-MM-DD
   endDate: string;   // YYYY-MM-DD
   reason: string;
+  isHalfDay?: boolean;
+  hours?: number;
 }
 
 /**
@@ -171,6 +188,55 @@ export interface CreateLeaveInput {
  */
 export interface UpdateLeaveInput {
   status: LeaveStatus;
+}
+
+// ============================================
+// Position Types - ประเภทข้อมูลตำแหน่ง
+// ============================================
+
+/**
+ * ข้อมูลตำแหน่งหลัก
+ */
+export interface Position {
+  id: number;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  order: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * ข้อมูลตำแหน่งรอง
+ */
+export interface PositionSecond {
+  id: number;
+  name: string;
+  description: string | null;
+  hasLevel: boolean;
+  maxLevel: number | null;
+  isActive: boolean;
+  order: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * ข้อมูลสำหรับสร้าง/อัปเดตตำแหน่ง
+ */
+export interface CreatePositionInput {
+  name: string;
+  description?: string;
+  order?: number;
+}
+
+export interface CreatePositionSecondInput {
+  name: string;
+  description?: string;
+  hasLevel?: boolean;
+  maxLevel?: number;
+  order?: number;
 }
 
 // ============================================
