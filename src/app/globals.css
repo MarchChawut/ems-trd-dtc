@@ -5,6 +5,12 @@
 /* ============================================
    Global Styles - สไตล์ทั่วไปของแอปพลิเคชัน
    ============================================ */
+@font-face {
+  font-family: "THSarabun";
+  src: url("/fonts/THSarabun.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
 
 @layer base {
   :root {

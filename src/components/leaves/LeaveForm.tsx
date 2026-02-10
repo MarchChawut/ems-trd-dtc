@@ -11,6 +11,8 @@ import React, { useRef, useState } from "react";
 import { Printer, X, FileDown, Loader2 } from "lucide-react";
 import { Leave, LeaveType, User } from "@/types";
 import { generateLeavePDF } from "./LeaveFormPDF";
+import "./pdf-fonts";
+import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 
 interface LeaveFormProps {
   leave: Leave & { user: User };
@@ -152,8 +154,13 @@ export default function LeaveForm({
         <title>แบบใบลา - ${leave.user.name}</title>
         <style>
           @page { size: A4; margin: 0; }
+          @font-face {
+            font-family: 'THSarabun';
+            src: url('/fonts/THSarabun.ttf') format('truetype');
+          }
+
           body { 
-            font-family: 'TH SarabunPSK', 'TH Sarabun New', sans-serif; 
+            font-family: 'THSarabun', sans-serif;
             font-size: 16pt; 
             line-height: 1.2;
             margin: 0;
@@ -258,7 +265,7 @@ export default function LeaveForm({
               minHeight: "297mm",
               padding: "15mm 20mm 10mm 30mm",
               boxSizing: "border-box",
-              fontFamily: "'TH SarabunPSK', 'TH Sarabun New', sans-serif",
+              fontFamily: "THSarabun",
               fontSize: "16pt",
               lineHeight: 1.2,
             }}
@@ -435,14 +442,17 @@ export default function LeaveForm({
                       marginRight: "1.5mm",
                       borderRadius: "50%",
                       border: "1px solid black",
-                      backgroundColor: leave.type === "SICK" ? "black" : "transparent",
+                      backgroundColor:
+                        leave.type === "SICK" ? "black" : "transparent",
                     }}
                   />
                   ป่วย
                 </span>
               </div>
               <div style={{ display: "flex", marginBottom: "1mm" }}>
-                <span style={{ marginRight: "4mm", whiteSpace: "nowrap" }}>ขอลา</span>
+                <span style={{ marginRight: "4mm", whiteSpace: "nowrap" }}>
+                  ขอลา
+                </span>
                 <span
                   style={{
                     display: "inline-flex",
@@ -460,12 +470,19 @@ export default function LeaveForm({
                       marginRight: "1.5mm",
                       borderRadius: "50%",
                       border: "1px solid black",
-                      backgroundColor: leave.type === "PERSONAL" ? "black" : "transparent",
+                      backgroundColor:
+                        leave.type === "PERSONAL" ? "black" : "transparent",
                     }}
                   />
                   กิจ
                 </span>
-                <span style={{ whiteSpace: "nowrap", marginLeft: "8mm", marginRight: "2mm" }}>
+                <span
+                  style={{
+                    whiteSpace: "nowrap",
+                    marginLeft: "8mm",
+                    marginRight: "2mm",
+                  }}
+                >
                   เนื่องจาก
                 </span>
                 <span
@@ -494,7 +511,8 @@ export default function LeaveForm({
                       marginRight: "1.5mm",
                       borderRadius: "50%",
                       border: "1px solid black",
-                      backgroundColor: leave.type === "MATERNITY" ? "black" : "transparent",
+                      backgroundColor:
+                        leave.type === "MATERNITY" ? "black" : "transparent",
                     }}
                   />
                   คลอดบุตร
@@ -602,7 +620,8 @@ export default function LeaveForm({
                       marginRight: "1.5mm",
                       borderRadius: "50%",
                       border: "1px solid black",
-                      backgroundColor: leave.type === "SICK" ? "black" : "transparent",
+                      backgroundColor:
+                        leave.type === "SICK" ? "black" : "transparent",
                     }}
                   />
                   ป่วย
@@ -623,7 +642,8 @@ export default function LeaveForm({
                       marginRight: "1.5mm",
                       borderRadius: "50%",
                       border: "1px solid black",
-                      backgroundColor: leave.type === "PERSONAL" ? "black" : "transparent",
+                      backgroundColor:
+                        leave.type === "PERSONAL" ? "black" : "transparent",
                     }}
                   />
                   กิจ
@@ -644,7 +664,8 @@ export default function LeaveForm({
                       marginRight: "1.5mm",
                       borderRadius: "50%",
                       border: "1px solid black",
-                      backgroundColor: leave.type === "MATERNITY" ? "black" : "transparent",
+                      backgroundColor:
+                        leave.type === "MATERNITY" ? "black" : "transparent",
                     }}
                   />
                   คลอดบุตร
@@ -1009,32 +1030,88 @@ export default function LeaveForm({
 
                 {/* ลงชื่อผู้ตรวจสอบ */}
                 {/* ลงชื่อ */}
-                <div style={{ display: "flex", justifyContent: "center", marginTop: "8mm", marginBottom: "1mm" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginTop: "8mm",
+                    marginBottom: "1mm",
+                  }}
+                >
                   ลงชื่อ
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "50mm" }} />
-                  ผู้ตรวจสอบ          
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "50mm",
+                    }}
+                  />
+                  ผู้ตรวจสอบ
                 </div>
 
                 {/* (ชื่อ) */}
-                <div style={{ display: "flex", justifyContent: "flex-start", paddingLeft: "8mm", marginBottom: "3mm" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-start",
+                    paddingLeft: "8mm",
+                    marginBottom: "3mm",
+                  }}
+                >
                   {"("}
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "50mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "50mm",
+                    }}
+                  />
                   {")"}
                 </div>
 
                 {/* ตำแหน่ง */}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: "3mm" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginBottom: "3mm",
+                  }}
+                >
                   ตำแหน่ง
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "55mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "55mm",
+                    }}
+                  />
                 </div>
                 {/* วันที่ */}
                 <div style={{ display: "flex", justifyContent: "center" }}>
                   วันที่
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "8mm",
+                    }}
+                  />
                   /
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "12mm",
+                    }}
+                  />
                   /
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "16mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "16mm",
+                    }}
+                  />
                 </div>
               </div>
 
@@ -1054,40 +1131,119 @@ export default function LeaveForm({
                 </div>
 
                 {/* เส้นความเห็น */}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: "3mm" }}>
-                  <span style={{ borderBottom: "0.5pt dotted black", width: "90%", height: "5mm" }} />
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginBottom: "3mm",
+                  }}
+                >
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      width: "90%",
+                      height: "5mm",
+                    }}
+                  />
                 </div>
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: "3mm" }}>
-                  <span style={{ borderBottom: "0.5pt dotted black", width: "90%", height: "5mm" }} />
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginBottom: "3mm",
+                  }}
+                >
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      width: "90%",
+                      height: "5mm",
+                    }}
+                  />
                 </div>
 
                 {/* ลงชื่อ */}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: "1mm" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginBottom: "1mm",
+                  }}
+                >
                   ลงชื่อ
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "60mm",
+                    }}
+                  />
                 </div>
 
                 {/* (ชื่อ) */}
-                <div style={{ display: "flex", justifyContent: "center", marginLeft: "10mm", marginBottom: "3mm" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginLeft: "10mm",
+                    marginBottom: "3mm",
+                  }}
+                >
                   {"("}
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "60mm",
+                    }}
+                  />
                   {")"}
                 </div>
 
                 {/* ตำแหน่ง */}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: "3mm" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginBottom: "3mm",
+                  }}
+                >
                   ตำแหน่ง
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "60mm",
+                    }}
+                  />
                 </div>
-                
+
                 {/* วันที่ */}
                 <div style={{ display: "flex", justifyContent: "center" }}>
                   วันที่
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "8mm",
+                    }}
+                  />
                   /
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "12mm",
+                    }}
+                  />
                   /
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "16mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "16mm",
+                    }}
+                  />
                 </div>
 
                 {/* คำสั่ง */}
@@ -1114,44 +1270,127 @@ export default function LeaveForm({
                     justifyContent: "flex-start",
                   }}
                 >
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "1.5mm" }}>
-                    <span style={{ display: "inline-block", width: "3mm", height: "3mm", borderRadius: "50%", border: "1px solid black" }} />
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "1.5mm",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: "3mm",
+                        height: "3mm",
+                        borderRadius: "50%",
+                        border: "1px solid black",
+                      }}
+                    />
                     อนุญาต
                   </span>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "1.5mm" }}>
-                    <span style={{ display: "inline-block", width: "3mm", height: "3mm", borderRadius: "50%", border: "1px solid black" }} />
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "1.5mm",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: "3mm",
+                        height: "3mm",
+                        borderRadius: "50%",
+                        border: "1px solid black",
+                      }}
+                    />
                     ไม่อนุญาต
                   </span>
                 </div>
 
                 {/* ลงชื่อ */}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: "1mm" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginBottom: "1mm",
+                  }}
+                >
                   ลงชื่อ
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "60mm",
+                    }}
+                  />
                 </div>
 
                 {/* (ชื่อ) */}
-                <div style={{ display: "flex", justifyContent: "center", marginLeft: "10mm", marginBottom: "3mm" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginLeft: "10mm",
+                    marginBottom: "3mm",
+                  }}
+                >
                   {"("}
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "60mm",
+                    }}
+                  />
                   {")"}
                 </div>
 
                 {/* ตำแหน่ง */}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: "3mm" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginBottom: "3mm",
+                  }}
+                >
                   ตำแหน่ง
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "60mm",
+                    }}
+                  />
                 </div>
                 {/* <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "75mm" }} /> */}
 
                 {/* วันที่ */}
                 <div style={{ display: "flex", justifyContent: "center" }}>
                   วันที่
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "8mm",
+                    }}
+                  />
                   /
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "12mm",
+                    }}
+                  />
                   /
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "16mm" }} />
+                  <span
+                    style={{
+                      borderBottom: "0.5pt dotted black",
+                      display: "inline-block",
+                      minWidth: "16mm",
+                    }}
+                  />
                 </div>
               </div>
             </div>
