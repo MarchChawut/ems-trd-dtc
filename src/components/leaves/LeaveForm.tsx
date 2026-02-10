@@ -7,10 +7,10 @@
 
 "use client";
 
-import React, { useRef } from "react";
-import { Printer, X, FileDown } from "lucide-react";
+import React, { useRef, useState } from "react";
+import { Printer, X, FileDown, Loader2 } from "lucide-react";
 import { Leave, LeaveType, User } from "@/types";
-import { cn } from "@/lib/utils";
+import { generateLeavePDF } from "./LeaveFormPDF";
 
 interface LeaveFormProps {
   leave: Leave & { user: User };
@@ -100,25 +100,31 @@ export default function LeaveForm({
 }: LeaveFormProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
   // ค่าเริ่มต้นสำหรับ userStats
   const stats = userStats || {
     pastCount: 0,
     pastDays: 0,
     currentCount: 1,
     currentDays:
-      calculateLeaveDays(
-        leave.startDate,
-        leave.endDate,
-        leave.isHalfDay,
-        leave.hours,
+      parseFloat(
+        calculateLeaveDays(
+          leave.startDate,
+          leave.endDate,
+          leave.isHalfDay,
+          leave.hours,
+        ),
       ) || 1,
     totalCount: 1,
     totalDays:
-      calculateLeaveDays(
-        leave.startDate,
-        leave.endDate,
-        leave.isHalfDay,
-        leave.hours,
+      parseFloat(
+        calculateLeaveDays(
+          leave.startDate,
+          leave.endDate,
+          leave.isHalfDay,
+          leave.hours,
+        ),
       ) || 1,
   };
 
@@ -148,24 +154,28 @@ export default function LeaveForm({
           @page { size: A4; margin: 0; }
           body { 
             font-family: 'TH SarabunPSK', 'TH Sarabun New', sans-serif; 
-            font-size: 14pt; 
+            font-size: 16pt; 
             line-height: 1.2;
             margin: 0;
             padding: 0;
           }
           .form-container { 
             width: 210mm; 
-            min-height: 297mm;
-            padding: 25mm 20mm 20mm 30mm;
+            min-height: auto;
+            padding: 15mm 20mm 10mm 30mm;
             box-sizing: border-box;
+            page-break-inside: avoid;
           }
           @media print {
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         </style>
       </head>
       <body>
-        ${printContent.innerHTML}
+        <div class="form-container">
+          ${printContent.innerHTML}
+        </div>
       </body>
       </html>
     `);
@@ -178,8 +188,24 @@ export default function LeaveForm({
     }, 250);
   };
 
-  const handleExportPDF = () => {
-    handlePrint();
+  const handleExportPDF = async () => {
+    try {
+      setIsGeneratingPDF(true);
+      const blob = await generateLeavePDF(leave, stats);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `leave_form_${leave.user.username}_${new Date().toISOString().split("T")[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("เกิดข้อผิดพลาดในการสร้าง PDF");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   const leaveTypeLabel = leaveTypeLabels[leave.type];
@@ -195,10 +221,15 @@ export default function LeaveForm({
           <div className="flex gap-2">
             <button
               onClick={handleExportPDF}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors"
+              disabled={isGeneratingPDF}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <FileDown className="w-4 h-4" />
-              Export PDF
+              {isGeneratingPDF ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FileDown className="w-4 h-4" />
+              )}
+              {isGeneratingPDF ? "กำลังสร้าง PDF..." : "Export PDF"}
             </button>
             <button
               onClick={handlePrint}
@@ -225,10 +256,10 @@ export default function LeaveForm({
             style={{
               width: "210mm",
               minHeight: "297mm",
-              padding: "25mm 20mm 20mm 30mm",
+              padding: "15mm 20mm 10mm 30mm",
               boxSizing: "border-box",
               fontFamily: "'TH SarabunPSK', 'TH Sarabun New', sans-serif",
-              fontSize: "12pt",
+              fontSize: "16pt",
               lineHeight: 1.2,
             }}
           >
@@ -240,52 +271,122 @@ export default function LeaveForm({
             </div>
 
             {/* เขียนที่ + วันที่ */}
-            <div style={{ textAlign: "right", fontSize: "12pt", marginBottom: "2mm" }}>
+            <div
+              style={{
+                textAlign: "right",
+                fontSize: "16pt",
+                marginBottom: "2mm",
+              }}
+            >
               <div style={{ marginBottom: "1mm" }}>
                 เขียนที่
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "80mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "80mm",
+                    textAlign: "center",
+                  }}
+                >
                   ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง
                 </span>
               </div>
               <div>
                 วันที่
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "10mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "10mm",
+                    textAlign: "center",
+                  }}
+                >
                   {currentDate.day}
                 </span>
                 เดือน
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "25mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "25mm",
+                    textAlign: "center",
+                  }}
+                >
                   {currentDate.month}
                 </span>
                 พ.ศ.
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "15mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "15mm",
+                    textAlign: "center",
+                  }}
+                >
                   {currentDate.year}
                 </span>
               </div>
             </div>
 
             {/* เรื่อง + เรียน */}
-            <div style={{ fontSize: "14pt" }}>
+            <div style={{ fontSize: "16pt" }}>
               <div style={{ display: "flex", marginBottom: "1mm" }}>
                 <span style={{ whiteSpace: "nowrap" }}>เรื่อง</span>
-                <span style={{ borderBottom: "0.5pt dotted black", flex: 1, marginLeft: "2mm", paddingLeft: "1mm" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    flex: 1,
+                    marginLeft: "2mm",
+                    paddingLeft: "1mm",
+                  }}
+                >
                   ขออนุญาต{leaveTypeLabel.full}
                 </span>
               </div>
               <div style={{ display: "flex", marginBottom: "2mm" }}>
                 <span style={{ whiteSpace: "nowrap" }}>เรียน</span>
-                <span style={{ borderBottom: "0.5pt dotted black", flex: 1, marginLeft: "2mm", paddingLeft: "1mm" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    flex: 1,
+                    marginLeft: "2mm",
+                    paddingLeft: "1mm",
+                  }}
+                >
                   ผู้อำนวยการกองการศึกษา วิจัย และพัฒนา
                 </span>
               </div>
 
               {/* ข้าพเจ้า + ตำแหน่ง */}
-              <div style={{ display: "flex", paddingLeft: "10mm", marginBottom: "1mm" }}>
+              <div
+                style={{
+                  display: "flex",
+                  paddingLeft: "10mm",
+                  marginBottom: "1mm",
+                }}
+              >
                 <span style={{ whiteSpace: "nowrap" }}>ข้าพเจ้า</span>
-                <span style={{ borderBottom: "0.5pt dotted black", flex: 1, marginLeft: "1mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    flex: 1,
+                    marginLeft: "1mm",
+                    textAlign: "center",
+                  }}
+                >
                   {leave.user.name}
                 </span>
-                <span style={{ whiteSpace: "nowrap", marginLeft: "1mm" }}>ตำแหน่ง</span>
-                <span style={{ borderBottom: "0.5pt dotted black", flex: 1, marginLeft: "1mm", textAlign: "center" }}>
+                <span style={{ whiteSpace: "nowrap", marginLeft: "1mm" }}>
+                  ตำแหน่ง
+                </span>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    flex: 1,
+                    marginLeft: "1mm",
+                    textAlign: "center",
+                  }}
+                >
                   {leave.user.position || ""}
                 </span>
               </div>
@@ -293,11 +394,25 @@ export default function LeaveForm({
               {/* กอง + สังกัด */}
               <div style={{ paddingLeft: "0mm", marginBottom: "2mm" }}>
                 <span>กอง</span>
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "60mm",
+                    textAlign: "center",
+                  }}
+                >
                   กองการศึกษา วิจัย และพัฒนา
                 </span>
                 <span style={{ marginLeft: "5mm" }}>สังกัด</span>
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "80mm",
+                    textAlign: "center",
+                  }}
+                >
                   ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง
                 </span>
               </div>
@@ -305,40 +420,82 @@ export default function LeaveForm({
               {/* ขอลา: ป่วย / กิจ / คลอดบุตร */}
               <div style={{ marginBottom: "1mm", paddingLeft: "15mm" }}>
                 <span
-                  className={cn("inline-flex items-center", leave.type === "SICK" && "font-bold")}
-                  style={{ marginRight: "5mm" }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    marginRight: "5mm",
+                    fontWeight: leave.type === "SICK" ? "bold" : "normal",
+                  }}
                 >
                   <span
-                    className={cn("inline-block rounded-full border border-black", leave.type === "SICK" && "bg-black")}
-                    style={{ width: "3mm", height: "3mm", marginRight: "1.5mm" }}
+                    style={{
+                      display: "inline-block",
+                      width: "3mm",
+                      height: "3mm",
+                      marginRight: "1.5mm",
+                      borderRadius: "50%",
+                      border: "1px solid black",
+                      backgroundColor: leave.type === "SICK" ? "black" : "transparent",
+                    }}
                   />
                   ป่วย
                 </span>
               </div>
               <div style={{ display: "flex", marginBottom: "1mm" }}>
-                <span style={{ whiteSpace: "nowrap" }}>ขอลา</span>
+                <span style={{ marginRight: "4mm", whiteSpace: "nowrap" }}>ขอลา</span>
                 <span
-                  className={cn("inline-flex items-center", leave.type === "PERSONAL" && "font-bold")}
-                  style={{ marginLeft: "3mm", marginRight: "3mm" }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    marginLeft: "3mm",
+                    marginRight: "3mm",
+                    fontWeight: leave.type === "PERSONAL" ? "bold" : "normal",
+                  }}
                 >
                   <span
-                    className={cn("inline-block rounded-full border border-black", leave.type === "PERSONAL" && "bg-black")}
-                    style={{ width: "3mm", height: "3mm", marginRight: "1.5mm" }}
+                    style={{
+                      display: "inline-block",
+                      width: "3mm",
+                      height: "3mm",
+                      marginRight: "1.5mm",
+                      borderRadius: "50%",
+                      border: "1px solid black",
+                      backgroundColor: leave.type === "PERSONAL" ? "black" : "transparent",
+                    }}
                   />
                   กิจ
                 </span>
-                <span style={{ whiteSpace: "nowrap", marginRight: "2mm" }}>เนื่องจาก</span>
-                <span style={{ borderBottom: "0.5pt dotted black", flex: 1, textAlign: "center" }}>
+                <span style={{ whiteSpace: "nowrap", marginLeft: "8mm", marginRight: "2mm" }}>
+                  เนื่องจาก
+                </span>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    flex: 1,
+                    textAlign: "center",
+                  }}
+                >
                   {leave.type === "PERSONAL" ? leave.reason : ""}
                 </span>
               </div>
               <div style={{ marginBottom: "2mm", paddingLeft: "15mm" }}>
                 <span
-                  className={cn("inline-flex items-center", leave.type === "MATERNITY" && "font-bold")}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    fontWeight: leave.type === "MATERNITY" ? "bold" : "normal",
+                  }}
                 >
                   <span
-                    className={cn("inline-block rounded-full border border-black", leave.type === "MATERNITY" && "bg-black")}
-                    style={{ width: "3mm", height: "3mm", marginRight: "1.5mm" }}
+                    style={{
+                      display: "inline-block",
+                      width: "3mm",
+                      height: "3mm",
+                      marginRight: "1.5mm",
+                      borderRadius: "50%",
+                      border: "1px solid black",
+                      backgroundColor: leave.type === "MATERNITY" ? "black" : "transparent",
+                    }}
                   />
                   คลอดบุตร
                 </span>
@@ -347,253 +504,654 @@ export default function LeaveForm({
               {/* ตั้งแต่วันที่...ถึงวันที่...มีกำหนด */}
               <div style={{ marginBottom: "1mm" }}>
                 ตั้งแต่วันที่
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "10mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "8mm",
+                    textAlign: "center",
+                  }}
+                >
                   {startDate.day}
                 </span>
                 เดือน
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "20mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "20mm",
+                    textAlign: "center",
+                  }}
+                >
                   {startDate.month}
                 </span>
                 พ.ศ.
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "12mm",
+                    textAlign: "center",
+                  }}
+                >
                   {startDate.year}
                 </span>
-                <span style={{ marginLeft: "10mm" }}>ถึงวันที่</span>
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "10mm", textAlign: "center" }}>
+                <span style={{ marginLeft: "" }}>ถึงวันที่</span>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "8mm",
+                    textAlign: "center",
+                  }}
+                >
                   {endDate.day}
                 </span>
                 เดือน
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "20mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "20mm",
+                    textAlign: "center",
+                  }}
+                >
                   {endDate.month}
                 </span>
                 พ.ศ.
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "12mm",
+                    textAlign: "center",
+                  }}
+                >
                   {endDate.year}
                 </span>
-              </div>
-              <div style={{ marginBottom: "1mm", paddingLeft: "60mm" }}>
                 มีกำหนด
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm", textAlign: "center", fontWeight: "bold" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "12mm",
+                    textAlign: "center",
+                    fontWeight: "bold",
+                  }}
+                >
                   {leaveDays}
                 </span>
-                วัน
               </div>
 
               {/* ข้าพเจ้าได้ลา */}
-              <div style={{ marginBottom: "1mm" }}>
+              <div style={{ marginBottom: "2mm" }}>
                 ข้าพเจ้าได้ลา
                 <span
-                  className={cn("inline-flex items-center", leave.type === "SICK" && "font-bold")}
-                  style={{ margin: "0 3mm" }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    margin: "0 3mm",
+                    fontWeight: leave.type === "SICK" ? "bold" : "normal",
+                  }}
                 >
                   <span
-                    className={cn("inline-block rounded-full border border-black", leave.type === "SICK" && "bg-black")}
-                    style={{ width: "3mm", height: "3mm", marginRight: "1.5mm" }}
+                    style={{
+                      display: "inline-block",
+                      width: "3mm",
+                      height: "3mm",
+                      marginRight: "1.5mm",
+                      borderRadius: "50%",
+                      border: "1px solid black",
+                      backgroundColor: leave.type === "SICK" ? "black" : "transparent",
+                    }}
                   />
                   ป่วย
                 </span>
                 <span
-                  className={cn("inline-flex items-center", leave.type === "PERSONAL" && "font-bold")}
-                  style={{ margin: "0 3mm" }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    margin: "0 1mm",
+                    fontWeight: leave.type === "PERSONAL" ? "bold" : "normal",
+                  }}
                 >
                   <span
-                    className={cn("inline-block rounded-full border border-black", leave.type === "PERSONAL" && "bg-black")}
-                    style={{ width: "3mm", height: "3mm", marginRight: "1.5mm" }}
+                    style={{
+                      display: "inline-block",
+                      width: "3mm",
+                      height: "3mm",
+                      marginRight: "1.5mm",
+                      borderRadius: "50%",
+                      border: "1px solid black",
+                      backgroundColor: leave.type === "PERSONAL" ? "black" : "transparent",
+                    }}
                   />
                   กิจ
                 </span>
                 <span
-                  className={cn("inline-flex items-center", leave.type === "MATERNITY" && "font-bold")}
-                  style={{ margin: "0 3mm" }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    margin: "0 3mm",
+                    fontWeight: leave.type === "MATERNITY" ? "bold" : "normal",
+                  }}
                 >
                   <span
-                    className={cn("inline-block rounded-full border border-black", leave.type === "MATERNITY" && "bg-black")}
-                    style={{ width: "3mm", height: "3mm", marginRight: "1.5mm" }}
+                    style={{
+                      display: "inline-block",
+                      width: "3mm",
+                      height: "3mm",
+                      marginRight: "1.5mm",
+                      borderRadius: "50%",
+                      border: "1px solid black",
+                      backgroundColor: leave.type === "MATERNITY" ? "black" : "transparent",
+                    }}
                   />
                   คลอดบุตร
                 </span>
                 ครั้งสุดท้ายตั้งแต่วันที่
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "80mm", textAlign: "center" }}></span>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "8mm",
+                    textAlign: "center",
+                  }}
+                >
+                  {startDate.day}
+                </span>
+                เดือน
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "20mm",
+                    textAlign: "center",
+                  }}
+                >
+                  {startDate.month}
+                </span>
+                พ.ศ.
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "12mm",
+                    textAlign: "center",
+                  }}
+                >
+                  {startDate.year}
+                </span>
               </div>
 
               {/* ถึงวันที่ + มีกำหนด + ในระหว่างลา */}
               <div style={{ marginBottom: "1mm" }}>
                 ถึงวันที่
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "10mm", textAlign: "center" }}></span>
-                <span style={{ marginLeft: "5mm" }}>มีกำหนด</span>
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "10mm", textAlign: "center" }}></span>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "8mm",
+                    textAlign: "center",
+                  }}
+                >
+                  {endDate.day}
+                </span>
+                เดือน
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "20mm",
+                    textAlign: "center",
+                  }}
+                >
+                  {endDate.month}
+                </span>
+                พ.ศ.
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "12mm",
+                    textAlign: "center",
+                  }}
+                >
+                  {endDate.year}
+                </span>
+                มีกำหนด
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "12mm",
+                    textAlign: "center",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {leaveDays}
+                </span>
                 วัน ในระหว่างลาจะติดต่อข้าพเจ้าได้ที่
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "30mm" }}></span>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "14mm",
+                  }}
+                ></span>
               </div>
               <div style={{ display: "flex", marginBottom: "2mm" }}>
-                <span style={{ borderBottom: "0.5pt dotted black", flex: 1 }}></span>
-                <span style={{ whiteSpace: "nowrap", margin: "0 2mm" }}>หมายเลขโทรศัพท์</span>
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "40mm" }}></span>
+                <span
+                  style={{ borderBottom: "0.5pt dotted black", flex: 1 }}
+                ></span>
+                <span style={{ whiteSpace: "nowrap", margin: "0 2mm" }}>
+                  หมายเลขโทรศัพท์
+                </span>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "40mm",
+                  }}
+                ></span>
               </div>
             </div>
 
             {/* ลงชื่อผู้ลา */}
-            <div style={{ textAlign: "center", margin: "6mm 0 8mm 0", fontSize: "14pt" }}>
+            <div
+              style={{
+                textAlign: "center",
+                margin: "8mm 0 8mm 0",
+                fontSize: "16pt",
+              }}
+            >
               <div style={{ marginBottom: "1mm" }}>
                 ลงชื่อ
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "55mm" }}></span>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "55mm",
+                  }}
+                ></span>
               </div>
-              <div style={{ marginLeft: "15mm" }}>
+              <div style={{ marginLeft: "8mm" }}>
                 {"("}{" "}
-                <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "50mm", textAlign: "center" }}>
+                <span
+                  style={{
+                    borderBottom: "0.5pt dotted black",
+                    display: "inline-block",
+                    minWidth: "50mm",
+                    textAlign: "center",
+                  }}
+                >
                   {leave.user.name}
-                </span>
-                {" "}{")"}
+                </span>{" "}
+                {")"}
               </div>
             </div>
 
             {/* ตารางสถิติ + ความเห็น */}
-            <div style={{ display: "flex", gap: "5mm", alignItems: "flex-start", fontSize: "14pt" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "5mm",
+                alignItems: "flex-start",
+                fontSize: "16pt",
+              }}
+            >
               {/* ฝั่งซ้าย - สถิติ */}
-              <div style={{ width: "50%" }}>
-                <div style={{ fontWeight: "bold", fontSize: "14pt", textAlign: "left", marginBottom: "2mm", textDecoration: "underline" }}>
+              <div style={{ width: "50%", margin: "1mm auto" }}>
+                <div
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: "16pt",
+                    textAlign: "center",
+                    marginBottom: "1mm",
+                    textDecoration: "underline",
+                  }}
+                >
                   สถิติการลาในปีงบประมาณนี้
                 </div>
 
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14pt" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: "14pt",
+                  }}
+                >
                   <thead>
                     <tr>
-                      <th style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center", width: "25%" }}>ประเภทลา</th>
-                      <th style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center", width: "25%" }}>ลามาแล้ว<br/>ครั้ง/วัน</th>
-                      <th style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center", width: "25%" }}>ลาครั้งนี้<br/>ครั้ง/วัน</th>
-                      <th style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center", width: "25%" }}>รวมเป็น<br/>ครั้ง/วัน</th>
+                      <th
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                          width: "25%",
+                        }}
+                      >
+                        ประเภทลา
+                      </th>
+                      <th
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                          width: "25%",
+                        }}
+                      >
+                        ลามาแล้ว
+                        <br />
+                        ครั้ง/วัน
+                      </th>
+                      <th
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                          width: "25%",
+                        }}
+                      >
+                        ลาครั้งนี้
+                        <br />
+                        ครั้ง/วัน
+                      </th>
+                      <th
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                          width: "25%",
+                        }}
+                      >
+                        รวมเป็น
+                        <br />
+                        ครั้ง/วัน
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>ป่วย</td>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>
-                        {leave.type === "SICK" ? `${stats.pastCount}/${stats.pastDays}` : ""}
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        ป่วย
                       </td>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>
-                        {leave.type === "SICK" ? `${stats.currentCount}/${stats.currentDays}` : ""}
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        {leave.type === "SICK"
+                          ? `${stats.pastCount}/${stats.pastDays}`
+                          : ""}
                       </td>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>
-                        {leave.type === "SICK" ? `${stats.totalCount}/${stats.totalDays}` : ""}
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        {leave.type === "SICK"
+                          ? `${stats.currentCount}/${stats.currentDays}`
+                          : ""}
+                      </td>
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        {leave.type === "SICK"
+                          ? `${stats.totalCount}/${stats.totalDays}`
+                          : ""}
                       </td>
                     </tr>
                     <tr>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>กิจ</td>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>
-                        {leave.type === "PERSONAL" ? `${stats.pastCount}/${stats.pastDays}` : ""}
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        กิจ
                       </td>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>
-                        {leave.type === "PERSONAL" ? `${stats.currentCount}/${stats.currentDays}` : ""}
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        {leave.type === "PERSONAL"
+                          ? `${stats.pastCount}/${stats.pastDays}`
+                          : ""}
                       </td>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>
-                        {leave.type === "PERSONAL" ? `${stats.totalCount}/${stats.totalDays}` : ""}
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        {leave.type === "PERSONAL"
+                          ? `${stats.currentCount}/${stats.currentDays}`
+                          : ""}
+                      </td>
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        {leave.type === "PERSONAL"
+                          ? `${stats.totalCount}/${stats.totalDays}`
+                          : ""}
                       </td>
                     </tr>
                     <tr>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>คลอดบุตร</td>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>
-                        {leave.type === "MATERNITY" ? `${stats.pastCount}/${stats.pastDays}` : ""}
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        คลอดบุตร
                       </td>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>
-                        {leave.type === "MATERNITY" ? `${stats.currentCount}/${stats.currentDays}` : ""}
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        {leave.type === "MATERNITY"
+                          ? `${stats.pastCount}/${stats.pastDays}`
+                          : ""}
                       </td>
-                      <td style={{ border: "0.5pt solid black", padding: "1mm", textAlign: "center" }}>
-                        {leave.type === "MATERNITY" ? `${stats.totalCount}/${stats.totalDays}` : ""}
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        {leave.type === "MATERNITY"
+                          ? `${stats.currentCount}/${stats.currentDays}`
+                          : ""}
+                      </td>
+                      <td
+                        style={{
+                          border: "0.5pt solid black",
+                          padding: "1mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        {leave.type === "MATERNITY"
+                          ? `${stats.totalCount}/${stats.totalDays}`
+                          : ""}
                       </td>
                     </tr>
                   </tbody>
                 </table>
 
                 {/* ลงชื่อผู้ตรวจสอบ */}
-                <div style={{ marginTop: "4mm" }}>
-                  <div style={{ marginBottom: "1mm" }}>
-                    ลงชื่อ
-                    <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "40mm" }}></span>
-                    ผู้ตรวจสอบ
-                  </div>
-                  <div style={{ marginLeft: "8mm", marginBottom: "1mm" }}>
-                    {"("}{" "}
-                    <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "35mm" }}></span>
-                    {" "}{")"}
-                  </div>
-                  <div style={{ marginBottom: "1mm" }}>
-                    ตำแหน่ง
-                    <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "45mm" }}></span>
-                  </div>
-                  <div>
-                    วันที่
-                    <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }}></span>
-                    /
-                    <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }}></span>
-                    /
-                    <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm" }}></span>
-                  </div>
+                {/* ลงชื่อ */}
+                <div style={{ display: "flex", justifyContent: "center", marginTop: "8mm", marginBottom: "1mm" }}>
+                  ลงชื่อ
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "50mm" }} />
+                  ผู้ตรวจสอบ          
+                </div>
+
+                {/* (ชื่อ) */}
+                <div style={{ display: "flex", justifyContent: "flex-start", paddingLeft: "8mm", marginBottom: "3mm" }}>
+                  {"("}
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "50mm" }} />
+                  {")"}
+                </div>
+
+                {/* ตำแหน่ง */}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "3mm" }}>
+                  ตำแหน่ง
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "55mm" }} />
+                </div>
+                {/* วันที่ */}
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  วันที่
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }} />
+                  /
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm" }} />
+                  /
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "16mm" }} />
                 </div>
               </div>
 
               {/* ฝั่งขวา - ความเห็น + คำสั่ง */}
-              <div style={{ width: "50%" }}>
+              <div style={{ width: "50%", margin: "1mm auto" }}>
                 {/* ความเห็นผู้บังคับบัญชา */}
-                <div style={{ fontWeight: "bold", fontSize: "14pt", textDecoration: "underline", marginBottom: "2mm" }}>
+                <div
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: "16pt",
+                    textDecoration: "underline",
+                    marginBottom: "2mm",
+                    textAlign: "left",
+                  }}
+                >
                   ความเห็นของผู้บังคับบัญชา
                 </div>
-                <div style={{ borderBottom: "0.5pt dotted black", height: "5mm", marginBottom: "3mm" }}></div>
 
-                <div style={{ marginBottom: "1mm" }}>
+                {/* เส้นความเห็น */}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "3mm" }}>
+                  <span style={{ borderBottom: "0.5pt dotted black", width: "90%", height: "5mm" }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "3mm" }}>
+                  <span style={{ borderBottom: "0.5pt dotted black", width: "90%", height: "5mm" }} />
+                </div>
+
+                {/* ลงชื่อ */}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "1mm" }}>
                   ลงชื่อ
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "50mm" }}></span>
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
                 </div>
-                <div style={{ marginLeft: "8mm", marginBottom: "1mm" }}>
-                  {"("}{" "}
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "45mm" }}></span>
-                  {" "}{")"}
+
+                {/* (ชื่อ) */}
+                <div style={{ display: "flex", justifyContent: "center", marginLeft: "10mm", marginBottom: "3mm" }}>
+                  {"("}
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
+                  {")"}
                 </div>
-                <div style={{ marginBottom: "1mm" }}>
+
+                {/* ตำแหน่ง */}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "3mm" }}>
                   ตำแหน่ง
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "50mm" }}></span>
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
                 </div>
-                <div style={{ marginBottom: "4mm" }}>
+                
+                {/* วันที่ */}
+                <div style={{ display: "flex", justifyContent: "center" }}>
                   วันที่
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }}></span>
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }} />
                   /
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }}></span>
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm" }} />
                   /
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm" }}></span>
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "16mm" }} />
                 </div>
 
                 {/* คำสั่ง */}
-                <div style={{ fontWeight: "bold", fontSize: "14pt", marginBottom: "2mm" }}>คำสั่ง</div>
-                <div style={{ display: "flex", gap: "8mm", marginBottom: "3mm", alignItems: "center" }}>
-                  <span className="inline-flex items-center" style={{ gap: "1.5mm" }}>
-                    <span className="inline-block rounded-full border border-black" style={{ width: "3mm", height: "3mm" }}></span>
+                <div
+                  style={{
+                    marginTop: "6mm",
+                    fontWeight: "bold",
+                    fontSize: "16pt",
+                    marginBottom: "2mm",
+                    textDecoration: "underline",
+                    textAlign: "left",
+                  }}
+                >
+                  คำสั่ง
+                </div>
+
+                {/* ตัวเลือก */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "8mm",
+                    marginBottom: "3mm",
+                    alignItems: "center",
+                    justifyContent: "flex-start",
+                  }}
+                >
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "1.5mm" }}>
+                    <span style={{ display: "inline-block", width: "3mm", height: "3mm", borderRadius: "50%", border: "1px solid black" }} />
                     อนุญาต
                   </span>
-                  <span className="inline-flex items-center" style={{ gap: "1.5mm" }}>
-                    <span className="inline-block rounded-full border border-black" style={{ width: "3mm", height: "3mm" }}></span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "1.5mm" }}>
+                    <span style={{ display: "inline-block", width: "3mm", height: "3mm", borderRadius: "50%", border: "1px solid black" }} />
                     ไม่อนุญาต
                   </span>
                 </div>
 
-                <div style={{ marginBottom: "1mm" }}>
+                {/* ลงชื่อ */}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "1mm" }}>
                   ลงชื่อ
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "50mm" }}></span>
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
                 </div>
-                <div style={{ marginLeft: "8mm", marginBottom: "1mm" }}>
-                  {"("}{" "}
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "45mm" }}></span>
-                  {" "}{")"}
+
+                {/* (ชื่อ) */}
+                <div style={{ display: "flex", justifyContent: "center", marginLeft: "10mm", marginBottom: "3mm" }}>
+                  {"("}
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
+                  {")"}
                 </div>
-                <div style={{ marginBottom: "1mm" }}>
+
+                {/* ตำแหน่ง */}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "3mm" }}>
                   ตำแหน่ง
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "50mm" }}></span>
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "60mm" }} />
                 </div>
-                <div>
+                {/* <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "75mm" }} /> */}
+
+                {/* วันที่ */}
+                <div style={{ display: "flex", justifyContent: "center" }}>
                   วันที่
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }}></span>
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }} />
                   /
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "8mm" }}></span>
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm" }} />
                   /
-                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "12mm" }}></span>
+                  <span style={{ borderBottom: "0.5pt dotted black", display: "inline-block", minWidth: "16mm" }} />
                 </div>
               </div>
             </div>
