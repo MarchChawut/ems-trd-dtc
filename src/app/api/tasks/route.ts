@@ -42,9 +42,15 @@ export async function GET(request: NextRequest) {
     const columnId = searchParams.get('columnId');
     const priority = searchParams.get('priority');
     const assigneeId = searchParams.get('assigneeId');
+    const showArchived = searchParams.get('showArchived');
 
     // สร้าง where clause
     const where: any = {};
+
+    // ซ่อนงานที่เก็บถาวรโดยค่าเริ่มต้น
+    if (showArchived !== 'true') {
+      where.archivedAt = null;
+    }
 
     if (columnId) {
       where.columnId = parseInt(columnId);

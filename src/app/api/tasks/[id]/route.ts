@@ -143,6 +143,14 @@ export async function PATCH(
       }
     }
 
+    if (body.reminderAt !== undefined) {
+      updateData.reminderAt = body.reminderAt ? new Date(body.reminderAt) : null;
+    }
+
+    if (body.archivedAt !== undefined) {
+      updateData.archivedAt = body.archivedAt ? new Date(body.archivedAt) : null;
+    }
+
     // อัปเดตงาน
     const task = await prisma.task.update({
       where: { id: taskId },

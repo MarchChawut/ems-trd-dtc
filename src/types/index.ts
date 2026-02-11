@@ -110,6 +110,8 @@ export interface Task {
   priority: TaskPriority;
   assigneeId: number | null;
   assignee: User | null;
+  reminderAt: Date | null;
+  archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -134,6 +136,8 @@ export interface UpdateTaskInput {
   columnId?: number;
   priority?: TaskPriority;
   assigneeId?: number | null;
+  reminderAt?: string | null;
+  archivedAt?: string | null;
 }
 
 // ============================================

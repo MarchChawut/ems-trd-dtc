@@ -114,6 +114,8 @@ model Task {
   columnId    Int        @default(1) // อ้างอิงถึง KanbanColumn
   priority    Priority   @default(MEDIUM)
   assigneeId  Int?
+  reminderAt  DateTime?  // วัน/เวลาแจ้งเตือน
+  archivedAt  DateTime?  // วัน/เวลาที่เก็บถาวร
   
   // ความสัมพันธ์
   column     KanbanColumn @relation(fields: [columnId], references: [id], onDelete: Restrict)
