@@ -21,10 +21,56 @@ import {
   Upload,
   Download,
   FileSpreadsheet,
-  CheckCircle
+  CheckCircle,
+  Edit3,
+  Save,
+  Camera,
+  Building2,
+  Briefcase,
+  Eye,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { User, UserRole } from '@/types';
+import { User, UserRole, Department, Position, PositionSecond } from '@/types';
+
+/**
+ * คำนำหน้าชื่อ
+ */
+const prefixOptions = [
+  // พลเรือน
+  { group: 'พลเรือน', items: ['นาย', 'นาง', 'นางสาว', 'น.ส.', 'เด็กชาย', 'เด็กหญิง'] },
+  // ทหารบก
+  { group: 'ทหารบก', items: [
+    'พล.อ.', 'พล.ท.', 'พล.ต.', 'พ.อ.', 'พ.ท.', 'พ.ต.',
+    'ร.อ.', 'ร.ท.', 'ร.ต.', 'ว่าที่ ร.ต.',
+    'จ.ส.อ.', 'จ.ส.ท.', 'จ.ส.ต.', 'ส.อ.', 'ส.ท.', 'ส.ต.',
+    'พลทหาร',
+  ]},
+  // ทหารเรือ
+  { group: 'ทหารเรือ', items: [
+    'พล.ร.อ.', 'พล.ร.ท.', 'พล.ร.ต.', 'น.อ.', 'น.ท.', 'น.ต.',
+    'ร.อ.', 'ร.ท.', 'ร.ต.', 'ว่าที่ ร.ต.',
+    'พ.จ.อ.', 'พ.จ.ท.', 'พ.จ.ต.', 'จ.อ.', 'จ.ท.', 'จ.ต.',
+    'พลทหาร',
+  ]},
+  // ทหารอากาศ
+  { group: 'ทหารอากาศ', items: [
+    'พล.อ.อ.', 'พล.อ.ท.', 'พล.อ.ต.', 'น.อ.', 'น.ท.', 'น.ต.',
+    'ร.อ.', 'ร.ท.', 'ร.ต.', 'ว่าที่ ร.ต.',
+    'พ.อ.อ.', 'พ.อ.ท.', 'พ.อ.ต.', 'จ.อ.', 'จ.ท.', 'จ.ต.',
+    'พลทหาร',
+  ]},
+  // ตำรวจ
+  { group: 'ตำรวจ', items: [
+    'พล.ต.อ.', 'พล.ต.ท.', 'พล.ต.ต.', 'พ.ต.อ.', 'พ.ต.ท.', 'พ.ต.ต.',
+    'ร.ต.อ.', 'ร.ต.ท.', 'ร.ต.ต.',
+    'ด.ต.', 'จ.ส.ต.', 'ส.ต.อ.', 'ส.ต.ท.', 'ส.ต.ต.',
+    'พลตำรวจ',
+  ]},
+  // ราชทินนาม / อื่นๆ
+  { group: 'อื่นๆ', items: ['คุณหญิง', 'ท่านผู้หญิง', 'หม่อมหลวง', 'หม่อมราชวงศ์', 'หม่อมเจ้า', 'ดร.', 'ศ.', 'รศ.', 'ผศ.'] },
+];
 
 /**
  * สีและข้อความของบทบาท
@@ -76,6 +122,7 @@ export default function EmployeesPage() {
   
   // State สำหรับข้อมูลพนักงานใหม่
   const [newUser, setNewUser] = useState({
+    prefix: '',
     name: '',
     email: '',
     username: '',
@@ -83,6 +130,35 @@ export default function EmployeesPage() {
     role: 'EMPLOYEE' as UserRole,
     department: '',
   });
+
+  // State สำหรับ Edit Modal
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState({
+    prefix: '',
+    name: '',
+    email: '',
+    role: 'EMPLOYEE' as UserRole,
+    department: '',
+    division: '',
+    position: '',
+    positionSecond: '',
+    positionLevel: '',
+    isActive: true,
+  });
+  const [isUploading, setIsUploading] = useState(false);
+  const profileInputRef = useRef<HTMLInputElement>(null);
+
+  // State สำหรับ Department/Position Management
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [positionSeconds, setPositionSeconds] = useState<PositionSecond[]>([]);
+  const [isManageOpen, setIsManageOpen] = useState(false);
+  const [manageTab, setManageTab] = useState<'departments' | 'positions' | 'positionSeconds'>('departments');
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemDesc, setNewItemDesc] = useState('');
+  const [newPosSecondHasLevel, setNewPosSecondHasLevel] = useState(false);
+  const [newPosSecondMaxLevel, setNewPosSecondMaxLevel] = useState('');
 
   /**
    * ดึงข้อมูลพนักงานจาก API
@@ -107,6 +183,21 @@ export default function EmployeesPage() {
         if (data.success) {
           setUsers(data.data);
         }
+
+        // ดึงข้อมูลแผนก ตำแหน่ง ตำแหน่งรอง
+        const [deptRes, posRes, posSecRes] = await Promise.all([
+          fetch('/api/departments'),
+          fetch('/api/positions'),
+          fetch('/api/position-seconds'),
+        ]);
+        const [deptData, posData, posSecData] = await Promise.all([
+          deptRes.json(),
+          posRes.json(),
+          posSecRes.json(),
+        ]);
+        if (deptData.success) setDepartments(deptData.data);
+        if (posData.success) setPositions(posData.data);
+        if (posSecData.success) setPositionSeconds(posSecData.data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
       } finally {
@@ -145,6 +236,7 @@ export default function EmployeesPage() {
         setUsers([...users, data.data]);
         setIsModalOpen(false);
         setNewUser({
+          prefix: '',
           name: '',
           email: '',
           username: '',
@@ -259,6 +351,185 @@ export default function EmployeesPage() {
   };
 
   /**
+   * เปิด Edit Modal
+   */
+  const openEditModal = (user: User) => {
+    setEditingUser(user);
+    setEditForm({
+      prefix: user.prefix || '',
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      department: user.department || '',
+      division: user.division || '',
+      position: user.position || '',
+      positionSecond: user.positionSecond || '',
+      positionLevel: user.positionLevel ? String(user.positionLevel) : '',
+      isActive: user.isActive,
+    });
+    setIsEditModalOpen(true);
+  };
+
+  /**
+   * บันทึกการแก้ไขพนักงาน
+   */
+  const handleSaveEdit = async () => {
+    if (!editingUser || !editForm.name.trim()) return;
+
+    try {
+      const response = await fetch(`/api/users/${editingUser.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prefix: editForm.prefix || null,
+          name: editForm.name,
+          email: editForm.email,
+          role: editForm.role,
+          department: editForm.department || null,
+          division: editForm.division || null,
+          position: editForm.position || null,
+          positionSecond: editForm.positionSecond || null,
+          positionLevel: editForm.positionLevel ? parseInt(editForm.positionLevel) : null,
+          isActive: editForm.isActive,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'ไม่สามารถอัปเดตได้');
+
+      if (data.success) {
+        setUsers(users.map(u => u.id === editingUser.id ? data.data : u));
+        setEditingUser(data.data);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    }
+  };
+
+  /**
+   * อัปโหลดรูปโปรไฟล์
+   */
+  const handleProfileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingUser) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('รองรับเฉพาะไฟล์ JPG, PNG, WEBP');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('ขนาดไฟล์ต้องไม่เกิน 5MB');
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('userId', String(editingUser.id));
+
+      const response = await fetch('/api/users/upload-profile', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'อัปโหลดไม่สำเร็จ');
+
+      if (data.success) {
+        setUsers(users.map(u => u.id === editingUser.id ? data.data : u));
+        setEditingUser(data.data);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  /**
+   * เพิ่มแผนก/ตำแหน่งใหม่
+   */
+  const handleAddItem = async () => {
+    if (!newItemName.trim()) return;
+
+    try {
+      let url = '';
+      let body: any = { name: newItemName, description: newItemDesc || null };
+
+      if (manageTab === 'departments') {
+        url = '/api/departments';
+      } else if (manageTab === 'positions') {
+        url = '/api/positions';
+      } else {
+        url = '/api/position-seconds';
+        body.hasLevel = newPosSecondHasLevel;
+        body.maxLevel = newPosSecondMaxLevel ? parseInt(newPosSecondMaxLevel) : null;
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'ไม่สามารถเพิ่มได้');
+
+      if (data.success) {
+        if (manageTab === 'departments') {
+          setDepartments([...departments, data.data]);
+        } else if (manageTab === 'positions') {
+          setPositions([...positions, data.data]);
+        } else {
+          setPositionSeconds([...positionSeconds, data.data]);
+        }
+        setNewItemName('');
+        setNewItemDesc('');
+        setNewPosSecondHasLevel(false);
+        setNewPosSecondMaxLevel('');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    }
+  };
+
+  /**
+   * ลบแผนก/ตำแหน่ง
+   */
+  const handleDeleteItem = async (id: number) => {
+    if (!confirm('ต้องการลบรายการนี้ใช่หรือไม่?')) return;
+
+    try {
+      let url = '';
+      if (manageTab === 'departments') {
+        url = `/api/departments?id=${id}`;
+      } else if (manageTab === 'positions') {
+        url = `/api/positions?id=${id}`;
+      } else {
+        url = `/api/position-seconds?id=${id}`;
+      }
+
+      const response = await fetch(url, { method: 'DELETE' });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'ไม่สามารถลบได้');
+      }
+
+      if (manageTab === 'departments') {
+        setDepartments(departments.filter(d => d.id !== id));
+      } else if (manageTab === 'positions') {
+        setPositions(positions.filter(p => p.id !== id));
+      } else {
+        setPositionSeconds(positionSeconds.filter(p => p.id !== id));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    }
+  };
+
+  /**
    * ฟังก์ชันกรองผู้ใช้ตามคำค้นหา
    */
   const filteredUsers = users.filter(user =>
@@ -290,7 +561,19 @@ export default function EmployeesPage() {
           </p>
         </div>
         {canManageUsers && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => setIsManageOpen(!isManageOpen)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
+                isManageOpen
+                  ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              )}
+            >
+              <Building2 size={18} />
+              <span>จัดการแผนก/ตำแหน่ง</span>
+            </button>
             <button
               onClick={() => setIsImportModalOpen(true)}
               className={cn(
@@ -335,6 +618,102 @@ export default function EmployeesPage() {
         />
       </div>
 
+      {/* Department/Position Management Panel */}
+      {isManageOpen && canManageUsers && (
+        <div className="bg-white rounded-xl shadow-sm border border-amber-200 p-6">
+          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <Building2 size={18} className="text-amber-600" />
+            จัดการแผนก/ตำแหน่ง
+          </h3>
+
+          {/* Tabs */}
+          <div className="flex gap-1 mb-4 bg-slate-100 rounded-lg p-1">
+            {[
+              { key: 'departments' as const, label: 'แผนก/กอง' },
+              { key: 'positions' as const, label: 'ตำแหน่งหลัก' },
+              { key: 'positionSeconds' as const, label: 'ตำแหน่งรอง' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => { setManageTab(tab.key); setNewItemName(''); setNewItemDesc(''); }}
+                className={cn(
+                  "flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors",
+                  manageTab === tab.key
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-800"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* List */}
+          <div className="space-y-2 mb-4 max-h-52 overflow-y-auto">
+            {manageTab === 'departments' && departments.map((item) => (
+              <div key={item.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
+                <span className="text-sm font-medium text-slate-700">{item.name}</span>
+                <button onClick={() => handleDeleteItem(item.id)} className="text-slate-400 hover:text-rose-500 p-1 rounded hover:bg-rose-50 transition-colors"><Trash2 size={14} /></button>
+              </div>
+            ))}
+            {manageTab === 'positions' && positions.map((item) => (
+              <div key={item.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
+                <span className="text-sm font-medium text-slate-700">{item.name}</span>
+                <button onClick={() => handleDeleteItem(item.id)} className="text-slate-400 hover:text-rose-500 p-1 rounded hover:bg-rose-50 transition-colors"><Trash2 size={14} /></button>
+              </div>
+            ))}
+            {manageTab === 'positionSeconds' && positionSeconds.map((item) => (
+              <div key={item.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
+                <div>
+                  <span className="text-sm font-medium text-slate-700">{item.name}</span>
+                  {item.hasLevel && (
+                    <span className="text-xs text-slate-400 ml-2">(มีระดับ 1-{item.maxLevel || 11})</span>
+                  )}
+                </div>
+                <button onClick={() => handleDeleteItem(item.id)} className="text-slate-400 hover:text-rose-500 p-1 rounded hover:bg-rose-50 transition-colors"><Trash2 size={14} /></button>
+              </div>
+            ))}
+            {(manageTab === 'departments' ? departments : manageTab === 'positions' ? positions : positionSeconds).length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีรายการ</p>
+            )}
+          </div>
+
+          {/* Add new */}
+          <div className="flex gap-2 items-center">
+            <input
+              type="text"
+              placeholder={manageTab === 'departments' ? 'ชื่อแผนก...' : manageTab === 'positions' ? 'ชื่อตำแหน่ง...' : 'ชื่อตำแหน่งรอง...'}
+              value={newItemName}
+              onChange={(e) => setNewItemName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
+              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            {manageTab === 'positionSeconds' && (
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={newPosSecondHasLevel}
+                  onChange={(e) => setNewPosSecondHasLevel(e.target.checked)}
+                  className="rounded"
+                />
+                มีระดับ
+              </label>
+            )}
+            <button
+              onClick={handleAddItem}
+              disabled={!newItemName.trim()}
+              className={cn(
+                "bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm font-medium transition-colors flex items-center gap-1",
+                !newItemName.trim() && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              <Plus size={16} />
+              เพิ่ม
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ตารางพนักงาน */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -359,14 +738,26 @@ export default function EmployeesPage() {
                 </tr>
               ) : (
                 filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50/50 transition-colors group">
+                  <tr
+                    key={user.id}
+                    className="hover:bg-slate-50/50 transition-colors group cursor-pointer"
+                    onClick={() => openEditModal(user)}
+                  >
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-600 border border-indigo-200">
-                          {user.avatar || user.name.charAt(0)}
-                        </div>
+                        {user.profileImage ? (
+                          <img
+                            src={user.profileImage}
+                            alt={user.name}
+                            className="w-9 h-9 rounded-full object-cover border border-slate-200"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-600 border border-indigo-200">
+                            {user.avatar || user.name.charAt(0)}
+                          </div>
+                        )}
                         <div>
-                          <span className="font-medium text-slate-700 block">{user.name}</span>
+                          <span className="font-medium text-slate-700 block">{user.prefix ? `${user.prefix}${user.name}` : user.name}</span>
                           <span className="text-xs text-slate-400">{user.email}</span>
                         </div>
                       </div>
@@ -384,6 +775,9 @@ export default function EmployeesPage() {
                       {user.department && (
                         <p className="text-xs text-slate-500 mt-1">{user.department}</p>
                       )}
+                      {user.position && (
+                        <p className="text-xs text-slate-400 mt-0.5">{user.position}</p>
+                      )}
                     </td>
                     <td className="py-4 px-6">
                       <span
@@ -399,13 +793,22 @@ export default function EmployeesPage() {
                     </td>
                     {canManageUsers && (
                       <td className="py-4 px-6 text-right">
-                        <button
-                          onClick={() => handleDeleteUser(user.id)}
-                          className="text-slate-400 hover:text-rose-500 transition-colors p-2 hover:bg-rose-50 rounded-lg"
-                          title="ลบ"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openEditModal(user); }}
+                            className="text-slate-400 hover:text-indigo-600 transition-colors p-2 hover:bg-indigo-50 rounded-lg opacity-0 group-hover:opacity-100"
+                            title="แก้ไข"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteUser(user.id); }}
+                            className="text-slate-400 hover:text-rose-500 transition-colors p-2 hover:bg-rose-50 rounded-lg opacity-0 group-hover:opacity-100"
+                            title="ลบ"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -435,16 +838,32 @@ export default function EmployeesPage() {
             <form onSubmit={handleCreateUser} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  ชื่อ-นามสกุล <span className="text-rose-500">*</span>
+                  คำนำหน้า / ชื่อ-นามสกุล <span className="text-rose-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  required
-                  className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                  placeholder="สมชาย ใจดี"
-                  value={newUser.name}
-                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                />
+                <div className="flex gap-2">
+                  <select
+                    className="w-32 border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                    value={newUser.prefix}
+                    onChange={(e) => setNewUser({ ...newUser, prefix: e.target.value })}
+                  >
+                    <option value="">ไม่ระบุ</option>
+                    {prefixOptions.map((group) => (
+                      <optgroup key={group.group} label={group.group}>
+                        {group.items.map((item) => (
+                          <option key={item} value={item}>{item}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    required
+                    className="flex-1 border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                    placeholder="สมชาย ใจดี"
+                    value={newUser.name}
+                    onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                  />
+                </div>
               </div>
 
               <div>
@@ -658,6 +1077,218 @@ export default function EmployeesPage() {
                     <span>Import พนักงาน</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Employee Modal */}
+      {isEditModalOpen && editingUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <Edit3 size={18} />
+                แก้ไขข้อมูลพนักงาน
+              </h3>
+              <button
+                onClick={() => { setIsEditModalOpen(false); setEditingUser(null); }}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-4 overflow-y-auto">
+              {/* Profile Image */}
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  {editingUser.profileImage ? (
+                    <img
+                      src={editingUser.profileImage}
+                      alt={editingUser.name}
+                      className="w-20 h-20 rounded-full object-cover border-2 border-slate-200"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-full bg-indigo-100 flex items-center justify-center text-2xl font-bold text-indigo-600 border-2 border-indigo-200">
+                      {editingUser.avatar || editingUser.name.charAt(0)}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => profileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-1.5 rounded-full hover:bg-indigo-700 transition-colors shadow-md"
+                  >
+                    {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+                  </button>
+                  <input
+                    ref={profileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleProfileUpload}
+                    className="hidden"
+                  />
+                </div>
+                <div>
+                  <p className="font-medium text-slate-800">{editingUser.name}</p>
+                  <p className="text-xs text-slate-400">{editingUser.email}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">คลิกไอคอนกล้องเพื่อเปลี่ยนรูป</p>
+                </div>
+              </div>
+
+              {/* Form Fields */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">คำนำหน้า / ชื่อ-นามสกุล</label>
+                  <div className="flex gap-2">
+                    <select
+                      className="w-32 border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                      value={editForm.prefix}
+                      onChange={(e) => setEditForm({ ...editForm, prefix: e.target.value })}
+                    >
+                      <option value="">ไม่ระบุ</option>
+                      {prefixOptions.map((group) => (
+                        <optgroup key={group.group} label={group.group}>
+                          {group.items.map((item) => (
+                            <option key={item} value={item}>{item}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      className="flex-1 border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="ชื่อ-นามสกุล"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">อีเมล</label>
+                  <input
+                    type="email"
+                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">บทบาท</label>
+                  <select
+                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                    value={editForm.role}
+                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value as UserRole })}
+                  >
+                    <option value="EMPLOYEE">Employee</option>
+                    <option value="HR">HR</option>
+                    <option value="MANAGER">Manager</option>
+                    <option value="ADMIN">Admin</option>
+                    <option value="SUPER_ADMIN">Super Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">สถานะ</label>
+                  <select
+                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                    value={editForm.isActive ? 'true' : 'false'}
+                    onChange={(e) => setEditForm({ ...editForm, isActive: e.target.value === 'true' })}
+                  >
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">แผนก/กอง</label>
+                  <select
+                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                    value={editForm.department}
+                    onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                  >
+                    <option value="">ไม่ระบุ</option>
+                    {departments.filter(d => d.isActive).map((dept) => (
+                      <option key={dept.id} value={dept.name}>{dept.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">สังกัด</label>
+                  <input
+                    type="text"
+                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                    placeholder="เช่น ศูนย์เทคโนโลยีดิจิทัล"
+                    value={editForm.division}
+                    onChange={(e) => setEditForm({ ...editForm, division: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">ตำแหน่งหลัก</label>
+                  <select
+                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                    value={editForm.position}
+                    onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
+                  >
+                    <option value="">ไม่ระบุ</option>
+                    {positions.filter(p => p.isActive).map((pos) => (
+                      <option key={pos.id} value={pos.name}>{pos.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">ตำแหน่งรอง</label>
+                  <select
+                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                    value={editForm.positionSecond}
+                    onChange={(e) => {
+                      const selected = positionSeconds.find(p => p.name === e.target.value);
+                      setEditForm({
+                        ...editForm,
+                        positionSecond: e.target.value,
+                        positionLevel: selected?.hasLevel ? editForm.positionLevel : '',
+                      });
+                    }}
+                  >
+                    <option value="">ไม่ระบุ</option>
+                    {positionSeconds.filter(p => p.isActive).map((pos) => (
+                      <option key={pos.id} value={pos.name}>{pos.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {/* Show level selector if positionSecond has levels */}
+                {editForm.positionSecond && positionSeconds.find(p => p.name === editForm.positionSecond)?.hasLevel && (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">ระดับ</label>
+                    <select
+                      className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                      value={editForm.positionLevel}
+                      onChange={(e) => setEditForm({ ...editForm, positionLevel: e.target.value })}
+                    >
+                      <option value="">ไม่ระบุ</option>
+                      {Array.from({ length: positionSeconds.find(p => p.name === editForm.positionSecond)?.maxLevel || 11 }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>ระดับ {i + 1}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">
+              <button
+                onClick={handleSaveEdit}
+                className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white py-2.5 rounded-lg hover:bg-indigo-700 font-medium transition-colors"
+              >
+                <Save size={16} /> บันทึก
+              </button>
+              <button
+                onClick={() => { setIsEditModalOpen(false); setEditingUser(null); }}
+                className="flex-1 flex items-center justify-center gap-2 bg-slate-100 text-slate-700 py-2.5 rounded-lg hover:bg-slate-200 font-medium transition-colors"
+              >
+                ปิด
               </button>
             </div>
           </div>

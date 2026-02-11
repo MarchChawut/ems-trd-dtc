@@ -76,10 +76,16 @@ export async function GET(request: NextRequest) {
         id: true,
         email: true,
         username: true,
+        prefix: true,
         name: true,
         role: true,
         department: true,
+        division: true,
+        position: true,
+        positionSecond: true,
+        positionLevel: true,
         avatar: true,
+        profileImage: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
@@ -172,7 +178,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, username, password, name, role, department } = validationResult.data;
+    const { email, username, password, prefix, name, role, department } = validationResult.data;
 
     // ตรวจสอบว่าอีเมลซ้ำหรือไม่
     const existingEmail = await prisma.user.findUnique({
@@ -218,6 +224,7 @@ export async function POST(request: NextRequest) {
         email: sanitizeInput(email),
         username: sanitizeInput(username),
         password: hashedPassword,
+        prefix: prefix ? sanitizeInput(prefix) : null,
         name: sanitizeInput(name),
         role,
         department: department ? sanitizeInput(department) : null,
@@ -227,10 +234,16 @@ export async function POST(request: NextRequest) {
         id: true,
         email: true,
         username: true,
+        prefix: true,
         name: true,
         role: true,
         department: true,
+        division: true,
+        position: true,
+        positionSecond: true,
+        positionLevel: true,
         avatar: true,
+        profileImage: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,

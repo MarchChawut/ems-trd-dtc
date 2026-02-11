@@ -22,6 +22,7 @@ export interface User {
   id: number;
   email: string;
   username: string;
+  prefix: string | null; // คำนำหน้า เช่น นาย, น.ส., ร.ต.
   name: string;
   role: UserRole;
   department: string | null; // กอง เช่น กองการศึกษา วิจัย และพัฒนา
@@ -30,9 +31,45 @@ export interface User {
   positionSecond: string | null; // ตำแหน่งรอง เช่น เจ้าหน้าที่งานในพระองค์
   positionLevel: number | null; // ระดับ 1-11
   avatar: string | null;
+  profileImage: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * ข้อมูลแผนก/กอง
+ */
+export interface Department {
+  id: number;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  order: number;
+}
+
+/**
+ * ข้อมูลตำแหน่ง
+ */
+export interface Position {
+  id: number;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  order: number;
+}
+
+/**
+ * ข้อมูลตำแหน่งรอง
+ */
+export interface PositionSecond {
+  id: number;
+  name: string;
+  description: string | null;
+  hasLevel: boolean;
+  maxLevel: number | null;
+  isActive: boolean;
+  order: number;
 }
 
 /**
@@ -68,6 +105,7 @@ export interface CreateUserInput {
  */
 export interface UpdateUserInput {
   email?: string;
+  prefix?: string | null;
   name?: string;
   role?: UserRole;
   department?: string;
@@ -75,6 +113,7 @@ export interface UpdateUserInput {
   position?: string;
   positionSecond?: string;
   positionLevel?: number;
+  profileImage?: string | null;
   isActive?: boolean;
 }
 
@@ -195,36 +234,8 @@ export interface UpdateLeaveInput {
 }
 
 // ============================================
-// Position Types - ประเภทข้อมูลตำแหน่ง
+// Position Types - ประเภทข้อมูลตำแหน่ง (Input)
 // ============================================
-
-/**
- * ข้อมูลตำแหน่งหลัก
- */
-export interface Position {
-  id: number;
-  name: string;
-  description: string | null;
-  isActive: boolean;
-  order: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-/**
- * ข้อมูลตำแหน่งรอง
- */
-export interface PositionSecond {
-  id: number;
-  name: string;
-  description: string | null;
-  hasLevel: boolean;
-  maxLevel: number | null;
-  isActive: boolean;
-  order: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
 
 /**
  * ข้อมูลสำหรับสร้าง/อัปเดตตำแหน่ง
@@ -240,6 +251,12 @@ export interface CreatePositionSecondInput {
   description?: string;
   hasLevel?: boolean;
   maxLevel?: number;
+  order?: number;
+}
+
+export interface CreateDepartmentInput {
+  name: string;
+  description?: string;
   order?: number;
 }
 

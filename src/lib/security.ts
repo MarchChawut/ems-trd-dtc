@@ -82,6 +82,7 @@ export const createUserSchema = z.object({
     .min(8, 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร')
     .max(128, 'รหัสผ่านต้องไม่เกิน 128 ตัวอักษร')
     .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'รหัสผ่านต้องมีตัวพิมพ์เล็ก ตัวพิมพ์ใหญ่ และตัวเลข'),
+  prefix: z.string().max(50).nullable().optional(),
   name: z
     .string()
     .min(1, 'กรุณาระบุชื่อ')

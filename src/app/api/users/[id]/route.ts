@@ -15,9 +15,15 @@ import { z } from 'zod';
 // Schema สำหรับอัปเดตผู้ใช้
 const updateUserSchema = z.object({
   email: z.string().email('รูปแบบอีเมลไม่ถูกต้อง').optional(),
+  prefix: z.string().max(50).nullable().optional(),
   name: z.string().min(1, 'กรุณาระบุชื่อ').max(100).optional(),
   role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'HR']).optional(),
-  department: z.string().max(100).optional(),
+  department: z.string().max(100).nullable().optional(),
+  division: z.string().max(200).nullable().optional(),
+  position: z.string().max(100).nullable().optional(),
+  positionSecond: z.string().max(100).nullable().optional(),
+  positionLevel: z.number().int().min(1).max(11).nullable().optional(),
+  profileImage: z.string().max(500).nullable().optional(),
   isActive: z.boolean().optional(),
   password: z.string().min(8, 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร').optional(),
 });
@@ -66,10 +72,16 @@ export async function GET(
         id: true,
         email: true,
         username: true,
+        prefix: true,
         name: true,
         role: true,
         department: true,
+        division: true,
+        position: true,
+        positionSecond: true,
+        positionLevel: true,
         avatar: true,
+        profileImage: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
@@ -243,8 +255,32 @@ export async function PATCH(
       }
     }
 
+    if (validationResult.data.prefix !== undefined) {
+      updateData.prefix = validationResult.data.prefix ? sanitizeInput(validationResult.data.prefix) : null;
+    }
+
     if (department !== undefined) {
       updateData.department = department ? sanitizeInput(department) : null;
+    }
+
+    if (validationResult.data.division !== undefined) {
+      updateData.division = validationResult.data.division ? sanitizeInput(validationResult.data.division) : null;
+    }
+
+    if (validationResult.data.position !== undefined) {
+      updateData.position = validationResult.data.position ? sanitizeInput(validationResult.data.position) : null;
+    }
+
+    if (validationResult.data.positionSecond !== undefined) {
+      updateData.positionSecond = validationResult.data.positionSecond ? sanitizeInput(validationResult.data.positionSecond) : null;
+    }
+
+    if (validationResult.data.positionLevel !== undefined) {
+      updateData.positionLevel = validationResult.data.positionLevel;
+    }
+
+    if (validationResult.data.profileImage !== undefined) {
+      updateData.profileImage = validationResult.data.profileImage;
     }
 
     if (password !== undefined) {
@@ -259,10 +295,16 @@ export async function PATCH(
         id: true,
         email: true,
         username: true,
+        prefix: true,
         name: true,
         role: true,
         department: true,
+        division: true,
+        position: true,
+        positionSecond: true,
+        positionLevel: true,
         avatar: true,
+        profileImage: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
