@@ -178,8 +178,8 @@ export async function POST(request: NextRequest) {
     // คำนวณจำนวนวันลา (ไม่นับเสาร์-อาทิตย์ และวันหยุดที่ admin กำหนด)
     let totalDays = 0;
     if (hours && hours > 0) {
-      // ลาเป็นชั่วโมง (4 ชม. = 0.5 วัน, 8 ชม. = 1 วัน)
-      totalDays = hours / 8;
+      // ลา ≤ 3 ชม. = ครึ่งวัน (0.5), > 3 ชม. = 1 วัน
+      totalDays = hours <= 3 ? 0.5 : 1;
     } else if (isHalfDay) {
       // ลาครึ่งวัน = 0.5 วัน
       totalDays = 0.5;

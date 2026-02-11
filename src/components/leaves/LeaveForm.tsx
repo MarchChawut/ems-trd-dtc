@@ -96,32 +96,27 @@ function formatThaiDate(date: Date | string): {
 }
 
 /**
- * คำนวณจำนวนวันลา
+ * คำนวณจำนวนวันลา (คืนค่าตัวเลข หน่วยเป็นวัน)
  */
-function calculateLeaveDays(
+function calculateLeaveDaysNum(
   startDate: Date | string,
   endDate: Date | string,
   isHalfDay: boolean,
   hours?: number | null,
   holidays?: Holiday[],
-): string {
+): number {
   if (hours && hours > 0) {
-    if (hours === 4) return "0.5 วัน";
-    if (hours === 8) return "1 วัน";
-    return `${hours} ชม.`;
+    return hours <= 3 ? 0.5 : 1; // ลา ≤ 3 ชม. = ครึ่งวัน, > 3 ชม. = 1 วัน
   }
-
   if (isHalfDay) {
-    return "0.5 วัน";
+    return 0.5;
   }
-
   const start = new Date(startDate);
   const end = new Date(endDate);
   let count = 0;
   const current = new Date(start);
   while (current <= end) {
     const dayOfWeek = current.getDay();
-    // ไม่นับเสาร์(6) อาทิตย์(0)
     if (dayOfWeek !== 0 && dayOfWeek !== 6) {
       const dateStr = current.toISOString().split('T')[0];
       const isOrgHoliday = holidays?.some(h => {
@@ -134,8 +129,45 @@ function calculateLeaveDays(
     }
     current.setDate(current.getDate() + 1);
   }
+  return count;
+}
 
-  return `${count} วัน`;
+/**
+ * แสดงผลจำนวนวันลาเป็นข้อความ (รองรับครึ่งวันและชั่วโมง)
+ */
+function formatLeaveDays(
+  days: number,
+  hours?: number | null,
+  isHalfDay?: boolean,
+): string {
+  if (hours && hours > 0 && hours <= 3) {
+    return "0.5 วัน";
+  }
+  if (hours && hours > 3 && hours < 8) {
+    return "1 วัน";
+  }
+  if (isHalfDay || days === 0.5) {
+    return "0.5 วัน";
+  }
+  // แสดงทศนิยม 1 ตำแหน่ง
+  if (days % 1 !== 0) {
+    return `${days.toFixed(1)} วัน`;
+  }
+  return `${days} วัน`;
+}
+
+/**
+ * คำนวณจำนวนวันลา (คืนข้อความสำหรับแสดงผล)
+ */
+function calculateLeaveDays(
+  startDate: Date | string,
+  endDate: Date | string,
+  isHalfDay: boolean,
+  hours?: number | null,
+  holidays?: Holiday[],
+): string {
+  const days = calculateLeaveDaysNum(startDate, endDate, isHalfDay, hours, holidays);
+  return formatLeaveDays(days, hours, isHalfDay);
 }
 
 export default function LeaveForm({
@@ -153,7 +185,7 @@ export default function LeaveForm({
   // คำนวณสถิติแยกตามประเภทลาในปีงบประมาณ
   const fiscalRange = getFiscalYearRange(new Date(leave.startDate));
   const calcBusinessDays = (l: Leave) =>
-    parseFloat(calculateLeaveDays(l.startDate, l.endDate, l.isHalfDay, l.hours, holidays)) || 0;
+    calculateLeaveDaysNum(l.startDate, l.endDate, l.isHalfDay, l.hours, holidays);
 
   const currentLeaveDaysNum = calcBusinessDays(leave);
 
@@ -186,6 +218,13 @@ export default function LeaveForm({
   const sickStats = computeTypeStats('SICK');
   const personalStats = computeTypeStats('PERSONAL');
   const maternityStats = computeTypeStats('MATERNITY');
+
+  // ฟอร์แมตจำนวนวันในตารางสถิติ (รองรับครึ่งวัน/ชม.)
+  const fmtDays = (days: number): string => {
+    if (days === 0) return "0";
+    if (days % 1 === 0) return `${days}`;
+    return days.toFixed(1);
+  };
 
   // ค่าเริ่มต้นสำหรับ userStats (backward compat)
   const stats = userStats || {
@@ -827,12 +866,12 @@ export default function LeaveForm({
                 >
                   {prevLeaveDays || ""}
                 </span>
-                วัน ในระหว่างลาจะติดต่อข้าพเจ้าได้ที่
+                ในระหว่างลาจะติดต่อข้าพเจ้าได้ที่
                 <span
                   style={{
                     borderBottom: "0.5pt dotted black",
                     display: "inline-block",
-                    minWidth: "14mm",
+                    minWidth: "20mm",
                   }}
                 ></span>
               </div>
@@ -991,7 +1030,7 @@ export default function LeaveForm({
                           }}
                         >
                           {row.stats.pastCount > 0 || row.stats.pastDays > 0
-                            ? `${row.stats.pastCount}/${row.stats.pastDays}`
+                            ? `${row.stats.pastCount}/${fmtDays(row.stats.pastDays)}`
                             : "-"}
                         </td>
                         <td
@@ -1002,7 +1041,7 @@ export default function LeaveForm({
                           }}
                         >
                           {row.stats.currentCount > 0
-                            ? `${row.stats.currentCount}/${row.stats.currentDays}`
+                            ? `${row.stats.currentCount}/${fmtDays(row.stats.currentDays)}`
                             : "-"}
                         </td>
                         <td
@@ -1013,7 +1052,7 @@ export default function LeaveForm({
                           }}
                         >
                           {row.stats.totalCount > 0 || row.stats.totalDays > 0
-                            ? `${row.stats.totalCount}/${row.stats.totalDays}`
+                            ? `${row.stats.totalCount}/${fmtDays(row.stats.totalDays)}`
                             : "-"}
                         </td>
                       </tr>

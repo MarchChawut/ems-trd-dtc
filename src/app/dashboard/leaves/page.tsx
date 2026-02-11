@@ -125,6 +125,10 @@ export default function LeavesPage() {
     endDate: '',
     reason: '',
   });
+  // โหมดการลา: fullday / halfday / hours
+  const [leaveMode, setLeaveMode] = useState<'fullday' | 'halfday' | 'hours'>('fullday');
+  const [halfDayPeriod, setHalfDayPeriod] = useState<'MORNING' | 'AFTERNOON'>('MORNING');
+  const [leaveHours, setLeaveHours] = useState<number>(1);
 
   // State สำหรับวันหยุด
   const [holidays, setHolidays] = useState<Holiday[]>([]);
@@ -315,19 +319,40 @@ export default function LeavesPage() {
   const handleCreateLeave = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!newLeave.userId || !newLeave.startDate || !newLeave.endDate || !newLeave.reason.trim()) {
+    if (!newLeave.userId || !newLeave.startDate || !newLeave.reason.trim()) {
       setError('กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+    // ถ้าลาเต็มวัน ต้องมี endDate
+    if (leaveMode === 'fullday' && !newLeave.endDate) {
+      setError('กรุณาระบุวันที่สิ้นสุด');
       return;
     }
     
     try {
+      const payload: Record<string, any> = {
+        ...newLeave,
+        userId: parseInt(newLeave.userId),
+        isHalfDay: leaveMode === 'halfday',
+        hours: leaveMode === 'hours' ? leaveHours : undefined,
+      };
+      // ถ้าลาครึ่งวันหรือลาเป็นชม. ให้ endDate = startDate
+      if (leaveMode === 'halfday' || leaveMode === 'hours') {
+        payload.endDate = newLeave.startDate;
+      }
+      // เพิ่มข้อมูลช่วงครึ่งวันในเหตุผล
+      if (leaveMode === 'halfday') {
+        const periodLabel = halfDayPeriod === 'MORNING' ? 'ครึ่งวันเช้า' : 'ครึ่งวันบ่าย';
+        payload.reason = `[${periodLabel}] ${newLeave.reason}`;
+      }
+      if (leaveMode === 'hours') {
+        payload.reason = `[ลา ${leaveHours} ชม.] ${newLeave.reason}`;
+      }
+
       const response = await fetch('/api/leaves', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newLeave,
-          userId: parseInt(newLeave.userId),
-        }),
+        body: JSON.stringify(payload),
       });
       
       const data = await response.json();
@@ -346,6 +371,9 @@ export default function LeavesPage() {
           endDate: '',
           reason: '',
         });
+        setLeaveMode('fullday');
+        setHalfDayPeriod('MORNING');
+        setLeaveHours(1);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
@@ -874,7 +902,11 @@ export default function LeavesPage() {
                           {new Date(leave.endDate).toLocaleDateString('th-TH')}
                         </span>
                         <span className="text-slate-400">
-                          ({calculateDays(leave.startDate, leave.endDate)} วันทำการ)
+                          ({leave.isHalfDay
+                            ? '0.5 วัน'
+                            : leave.hours && leave.hours > 0
+                              ? `${leave.hours <= 3 ? '0.5' : '1'} วัน`
+                              : `${calculateDays(leave.startDate, leave.endDate)} วันทำการ`})
                         </span>
                       </div>
                       <span className="hidden sm:inline">•</span>
@@ -982,31 +1014,130 @@ export default function LeavesPage() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* โหมดการลา */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  รูปแบบการลา
+                </label>
+                <div className="flex rounded-lg border border-slate-300 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setLeaveMode('fullday')}
+                    className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                      leaveMode === 'fullday'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    เต็มวัน
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLeaveMode('halfday')}
+                    className={`flex-1 py-2 text-sm font-medium transition-colors border-x border-slate-300 ${
+                      leaveMode === 'halfday'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    ครึ่งวัน
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLeaveMode('hours')}
+                    className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                      leaveMode === 'hours'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    รายชั่วโมง
+                  </button>
+                </div>
+              </div>
+
+              {/* ครึ่งวัน: เลือกเช้า/บ่าย */}
+              {leaveMode === 'halfday' && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    ตั้งแต่วันที่ <span className="text-rose-500">*</span>
+                    ช่วงเวลา
+                  </label>
+                  <div className="flex rounded-lg border border-slate-300 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setHalfDayPeriod('MORNING')}
+                      className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                        halfDayPeriod === 'MORNING'
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      ครึ่งวันเช้า (08:30 - 12:00)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHalfDayPeriod('AFTERNOON')}
+                      className={`flex-1 py-2 text-sm font-medium transition-colors border-l border-slate-300 ${
+                        halfDayPeriod === 'AFTERNOON'
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      ครึ่งวันบ่าย (13:00 - 16:30)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* รายชั่วโมง: เลือกจำนวนชม. */}
+              {leaveMode === 'hours' && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    จำนวนชั่วโมง
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={1}
+                      max={7}
+                      step={1}
+                      value={leaveHours}
+                      onChange={(e) => setLeaveHours(Math.max(1, Math.min(7, parseInt(e.target.value) || 1)))}
+                      className="w-24 border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-center"
+                    />
+                    <span className="text-sm text-slate-500">ชั่วโมง (1-7 ชม.)</span>
+                  </div>
+                </div>
+              )}
+
+              {/* วันที่ */}
+              <div className={leaveMode === 'fullday' ? 'grid grid-cols-2 gap-4' : ''}>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    {leaveMode === 'fullday' ? 'ตั้งแต่วันที่' : 'วันที่ลา'} <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="date"
                     required
-                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
                     value={newLeave.startDate}
                     onChange={(e) => setNewLeave({ ...newLeave, startDate: e.target.value })}
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    ถึงวันที่ <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
-                    value={newLeave.endDate}
-                    onChange={(e) => setNewLeave({ ...newLeave, endDate: e.target.value })}
-                  />
-                </div>
+                {leaveMode === 'fullday' && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      ถึงวันที่ <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={newLeave.endDate}
+                      onChange={(e) => setNewLeave({ ...newLeave, endDate: e.target.value })}
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
