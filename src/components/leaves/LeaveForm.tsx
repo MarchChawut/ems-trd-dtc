@@ -9,7 +9,7 @@
 
 import React, { useRef, useState } from "react";
 import { Printer, X, FileDown, Loader2 } from "lucide-react";
-import { Leave, LeaveType, User } from "@/types";
+import { Leave, LeaveType, User, Holiday } from "@/types";
 import { generateLeavePDF } from "./LeaveFormPDF";
 import "./pdf-fonts";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
@@ -24,7 +24,34 @@ interface LeaveFormProps {
     totalCount: number;
     totalDays: number;
   };
+  holidays?: Holiday[];
+  previousLeave?: (Leave & { user: User }) | null;
+  userLeaves?: Leave[];
   onClose: () => void;
+}
+
+/**
+ * คำนวณช่วงปีงบประมาณ (1 ต.ค. - 30 ก.ย.)
+ */
+function getFiscalYearRange(date: Date): { start: Date; end: Date } {
+  const year = date.getFullYear();
+  const month = date.getMonth(); // 0-indexed
+  // ถ้าเดือน ต.ค.(9) ขึ้นไป = ปีงบประมาณเริ่มปีนี้
+  // ถ้าเดือน ม.ค.(0) - ก.ย.(8) = ปีงบประมาณเริ่มปีก่อน
+  const fiscalStartYear = month >= 9 ? year : year - 1;
+  return {
+    start: new Date(fiscalStartYear, 9, 1), // 1 ต.ค.
+    end: new Date(fiscalStartYear + 1, 8, 30), // 30 ก.ย.
+  };
+}
+
+interface TypeStats {
+  pastCount: number;
+  pastDays: number;
+  currentCount: number;
+  currentDays: number;
+  totalCount: number;
+  totalDays: number;
 }
 
 /**
@@ -76,6 +103,7 @@ function calculateLeaveDays(
   endDate: Date | string,
   isHalfDay: boolean,
   hours?: number | null,
+  holidays?: Holiday[],
 ): string {
   if (hours && hours > 0) {
     if (hours === 4) return "0.5 วัน";
@@ -83,51 +111,90 @@ function calculateLeaveDays(
     return `${hours} ชม.`;
   }
 
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const diffTime = Math.abs(end.getTime() - start.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
   if (isHalfDay) {
     return "0.5 วัน";
   }
 
-  return `${diffDays} วัน`;
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  let count = 0;
+  const current = new Date(start);
+  while (current <= end) {
+    const dayOfWeek = current.getDay();
+    // ไม่นับเสาร์(6) อาทิตย์(0)
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      const dateStr = current.toISOString().split('T')[0];
+      const isOrgHoliday = holidays?.some(h => {
+        const hDate = new Date(h.date).toISOString().split('T')[0];
+        return hDate === dateStr;
+      }) || false;
+      if (!isOrgHoliday) {
+        count++;
+      }
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  return `${count} วัน`;
 }
 
 export default function LeaveForm({
   leave,
   userStats,
+  holidays = [],
+  previousLeave,
+  userLeaves = [],
   onClose,
 }: LeaveFormProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  // ค่าเริ่มต้นสำหรับ userStats
+  // คำนวณสถิติแยกตามประเภทลาในปีงบประมาณ
+  const fiscalRange = getFiscalYearRange(new Date(leave.startDate));
+  const calcBusinessDays = (l: Leave) =>
+    parseFloat(calculateLeaveDays(l.startDate, l.endDate, l.isHalfDay, l.hours, holidays)) || 0;
+
+  const currentLeaveDaysNum = calcBusinessDays(leave);
+
+  const computeTypeStats = (type: string): TypeStats => {
+    // ลาก่อนหน้า (ไม่รวมใบลาปัจจุบัน) ในปีงบประมาณเดียวกัน
+    const pastLeaves = userLeaves.filter(
+      (l) =>
+        l.id !== leave.id &&
+        l.type === type &&
+        new Date(l.startDate) >= fiscalRange.start &&
+        new Date(l.startDate) <= fiscalRange.end &&
+        (l.status === 'APPROVED' || l.status === 'PENDING')
+    );
+    const pastCount = pastLeaves.length;
+    const pastDays = pastLeaves.reduce((sum, l) => sum + calcBusinessDays(l), 0);
+
+    const currentCount = leave.type === type ? 1 : 0;
+    const currentDays = leave.type === type ? currentLeaveDaysNum : 0;
+
+    return {
+      pastCount,
+      pastDays: Math.round(pastDays * 100) / 100,
+      currentCount,
+      currentDays: Math.round(currentDays * 100) / 100,
+      totalCount: pastCount + currentCount,
+      totalDays: Math.round((pastDays + currentDays) * 100) / 100,
+    };
+  };
+
+  const sickStats = computeTypeStats('SICK');
+  const personalStats = computeTypeStats('PERSONAL');
+  const maternityStats = computeTypeStats('MATERNITY');
+
+  // ค่าเริ่มต้นสำหรับ userStats (backward compat)
   const stats = userStats || {
     pastCount: 0,
     pastDays: 0,
     currentCount: 1,
-    currentDays:
-      parseFloat(
-        calculateLeaveDays(
-          leave.startDate,
-          leave.endDate,
-          leave.isHalfDay,
-          leave.hours,
-        ),
-      ) || 1,
+    currentDays: currentLeaveDaysNum || 1,
     totalCount: 1,
-    totalDays:
-      parseFloat(
-        calculateLeaveDays(
-          leave.startDate,
-          leave.endDate,
-          leave.isHalfDay,
-          leave.hours,
-        ),
-      ) || 1,
+    totalDays: currentLeaveDaysNum || 1,
   };
 
   const startDate = formatThaiDate(leave.startDate);
@@ -138,7 +205,15 @@ export default function LeaveForm({
     leave.endDate,
     leave.isHalfDay,
     leave.hours,
+    holidays,
   );
+
+  // ข้อมูลการลาครั้งก่อน
+  const prevLeaveDate = previousLeave ? formatThaiDate(previousLeave.startDate) : null;
+  const prevLeaveEndDate = previousLeave ? formatThaiDate(previousLeave.endDate) : null;
+  const prevLeaveDays = previousLeave
+    ? calculateLeaveDays(previousLeave.startDate, previousLeave.endDate, previousLeave.isHalfDay, previousLeave.hours, holidays)
+    : null;
 
   const handlePrint = () => {
     const printContent = printRef.current;
@@ -609,7 +684,7 @@ export default function LeaveForm({
                     display: "inline-flex",
                     alignItems: "center",
                     margin: "0 3mm",
-                    fontWeight: leave.type === "SICK" ? "bold" : "normal",
+                    fontWeight: previousLeave?.type === "SICK" ? "bold" : "normal",
                   }}
                 >
                   <span
@@ -621,7 +696,7 @@ export default function LeaveForm({
                       borderRadius: "50%",
                       border: "1px solid black",
                       backgroundColor:
-                        leave.type === "SICK" ? "black" : "transparent",
+                        previousLeave?.type === "SICK" ? "black" : "transparent",
                     }}
                   />
                   ป่วย
@@ -631,7 +706,7 @@ export default function LeaveForm({
                     display: "inline-flex",
                     alignItems: "center",
                     margin: "0 1mm",
-                    fontWeight: leave.type === "PERSONAL" ? "bold" : "normal",
+                    fontWeight: previousLeave?.type === "PERSONAL" ? "bold" : "normal",
                   }}
                 >
                   <span
@@ -643,7 +718,7 @@ export default function LeaveForm({
                       borderRadius: "50%",
                       border: "1px solid black",
                       backgroundColor:
-                        leave.type === "PERSONAL" ? "black" : "transparent",
+                        previousLeave?.type === "PERSONAL" ? "black" : "transparent",
                     }}
                   />
                   กิจ
@@ -653,7 +728,7 @@ export default function LeaveForm({
                     display: "inline-flex",
                     alignItems: "center",
                     margin: "0 3mm",
-                    fontWeight: leave.type === "MATERNITY" ? "bold" : "normal",
+                    fontWeight: previousLeave?.type === "MATERNITY" ? "bold" : "normal",
                   }}
                 >
                   <span
@@ -665,7 +740,7 @@ export default function LeaveForm({
                       borderRadius: "50%",
                       border: "1px solid black",
                       backgroundColor:
-                        leave.type === "MATERNITY" ? "black" : "transparent",
+                        previousLeave?.type === "MATERNITY" ? "black" : "transparent",
                     }}
                   />
                   คลอดบุตร
@@ -679,7 +754,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  {startDate.day}
+                  {prevLeaveDate?.day || ""}
                 </span>
                 เดือน
                 <span
@@ -690,7 +765,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  {startDate.month}
+                  {prevLeaveDate?.month || ""}
                 </span>
                 พ.ศ.
                 <span
@@ -701,7 +776,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  {startDate.year}
+                  {prevLeaveDate?.year || ""}
                 </span>
               </div>
 
@@ -716,7 +791,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  {endDate.day}
+                  {prevLeaveEndDate?.day || ""}
                 </span>
                 เดือน
                 <span
@@ -727,7 +802,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  {endDate.month}
+                  {prevLeaveEndDate?.month || ""}
                 </span>
                 พ.ศ.
                 <span
@@ -738,7 +813,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  {endDate.year}
+                  {prevLeaveEndDate?.year || ""}
                 </span>
                 มีกำหนด
                 <span
@@ -750,7 +825,7 @@ export default function LeaveForm({
                     fontWeight: "bold",
                   }}
                 >
-                  {leaveDays}
+                  {prevLeaveDays || ""}
                 </span>
                 วัน ในระหว่างลาจะติดต่อข้าพเจ้าได้ที่
                 <span
@@ -893,138 +968,56 @@ export default function LeaveForm({
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        ป่วย
-                      </td>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        {leave.type === "SICK"
-                          ? `${stats.pastCount}/${stats.pastDays}`
-                          : ""}
-                      </td>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        {leave.type === "SICK"
-                          ? `${stats.currentCount}/${stats.currentDays}`
-                          : ""}
-                      </td>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        {leave.type === "SICK"
-                          ? `${stats.totalCount}/${stats.totalDays}`
-                          : ""}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        กิจ
-                      </td>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        {leave.type === "PERSONAL"
-                          ? `${stats.pastCount}/${stats.pastDays}`
-                          : ""}
-                      </td>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        {leave.type === "PERSONAL"
-                          ? `${stats.currentCount}/${stats.currentDays}`
-                          : ""}
-                      </td>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        {leave.type === "PERSONAL"
-                          ? `${stats.totalCount}/${stats.totalDays}`
-                          : ""}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        คลอดบุตร
-                      </td>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        {leave.type === "MATERNITY"
-                          ? `${stats.pastCount}/${stats.pastDays}`
-                          : ""}
-                      </td>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        {leave.type === "MATERNITY"
-                          ? `${stats.currentCount}/${stats.currentDays}`
-                          : ""}
-                      </td>
-                      <td
-                        style={{
-                          border: "0.5pt solid black",
-                          padding: "1mm",
-                          textAlign: "center",
-                        }}
-                      >
-                        {leave.type === "MATERNITY"
-                          ? `${stats.totalCount}/${stats.totalDays}`
-                          : ""}
-                      </td>
-                    </tr>
+                    {([
+                      { label: "ป่วย", stats: sickStats },
+                      { label: "กิจ", stats: personalStats },
+                      { label: "คลอดบุตร", stats: maternityStats },
+                    ] as { label: string; stats: TypeStats }[]).map((row) => (
+                      <tr key={row.label}>
+                        <td
+                          style={{
+                            border: "0.5pt solid black",
+                            padding: "1mm",
+                            textAlign: "center",
+                          }}
+                        >
+                          {row.label}
+                        </td>
+                        <td
+                          style={{
+                            border: "0.5pt solid black",
+                            padding: "1mm",
+                            textAlign: "center",
+                          }}
+                        >
+                          {row.stats.pastCount > 0 || row.stats.pastDays > 0
+                            ? `${row.stats.pastCount}/${row.stats.pastDays}`
+                            : "-"}
+                        </td>
+                        <td
+                          style={{
+                            border: "0.5pt solid black",
+                            padding: "1mm",
+                            textAlign: "center",
+                          }}
+                        >
+                          {row.stats.currentCount > 0
+                            ? `${row.stats.currentCount}/${row.stats.currentDays}`
+                            : "-"}
+                        </td>
+                        <td
+                          style={{
+                            border: "0.5pt solid black",
+                            padding: "1mm",
+                            textAlign: "center",
+                          }}
+                        >
+                          {row.stats.totalCount > 0 || row.stats.totalDays > 0
+                            ? `${row.stats.totalCount}/${row.stats.totalDays}`
+                            : "-"}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
 

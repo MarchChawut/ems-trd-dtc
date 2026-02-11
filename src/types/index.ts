@@ -261,6 +261,34 @@ export interface CreateDepartmentInput {
 }
 
 // ============================================
+// Holiday Types - วันหยุดของหน่วยงาน
+// ============================================
+
+/**
+ * ข้อมูลวันหยุด
+ */
+export interface Holiday {
+  id: number;
+  date: string; // YYYY-MM-DD
+  name: string;
+  description: string | null;
+  year: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * ข้อมูลสำหรับสร้างวันหยุดใหม่
+ */
+export interface CreateHolidayInput {
+  date: string;
+  name: string;
+  description?: string;
+  year?: number;
+}
+
+// ============================================
 // API Response Types - ประเภทข้อมูลการตอบกลับ API
 // ============================================
 

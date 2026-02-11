@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
       targetUserId = body.userId;
     }
 
-    // คำนวณจำนวนวันลา
+    // คำนวณจำนวนวันลา (ไม่นับเสาร์-อาทิตย์ และวันหยุดที่ admin กำหนด)
     let totalDays = 0;
     if (hours && hours > 0) {
       // ลาเป็นชั่วโมง (4 ชม. = 0.5 วัน, 8 ชม. = 1 วัน)
@@ -184,11 +184,42 @@ export async function POST(request: NextRequest) {
       // ลาครึ่งวัน = 0.5 วัน
       totalDays = 0.5;
     } else {
-      // คำนวณจากวันที่
+      // ดึงวันหยุดจากฐานข้อมูล
       const start = new Date(startDate);
       const end = new Date(endDate);
-      const diffTime = Math.abs(end.getTime() - start.getTime());
-      totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      
+      let holidays: Date[] = [];
+      try {
+        const holidayRecords = await prisma.holiday.findMany({
+          where: {
+            isActive: true,
+            date: { gte: start, lte: end },
+          },
+          select: { date: true },
+        });
+        holidays = holidayRecords.map((h: { date: Date }) => h.date);
+      } catch {
+        // ถ้ายังไม่มีตาราง holiday ให้ข้ามไป
+      }
+
+      // นับเฉพาะวันทำการ (จันทร์-ศุกร์ ที่ไม่ใช่วันหยุด)
+      const current = new Date(start);
+      while (current <= end) {
+        const dayOfWeek = current.getDay();
+        // 0 = อาทิตย์, 6 = เสาร์
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+          // ตรวจสอบว่าไม่ใช่วันหยุด
+          const isHoliday = holidays.some(h => 
+            h.getFullYear() === current.getFullYear() &&
+            h.getMonth() === current.getMonth() &&
+            h.getDate() === current.getDate()
+          );
+          if (!isHoliday) {
+            totalDays++;
+          }
+        }
+        current.setDate(current.getDate() + 1);
+      }
     }
 
     // สร้างรายการลาใหม่

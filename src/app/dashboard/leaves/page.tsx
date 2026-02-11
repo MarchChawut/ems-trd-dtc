@@ -31,7 +31,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Leave, LeaveType, LeaveStatus, User } from '@/types';
+import { Leave, LeaveType, LeaveStatus, User, Holiday } from '@/types';
 import LeaveForm from '@/components/leaves/LeaveForm';
 
 /**
@@ -126,6 +126,13 @@ export default function LeavesPage() {
     reason: '',
   });
 
+  // State สำหรับวันหยุด
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [isHolidayPanelOpen, setIsHolidayPanelOpen] = useState(false);
+  const [newHoliday, setNewHoliday] = useState({ startDate: '', endDate: '', name: '' });
+  const [holidayYear, setHolidayYear] = useState(new Date().getFullYear());
+  const [canManage, setCanManage] = useState(false);
+
   /**
    * ดึงข้อมูลการลาและผู้ใช้จาก API
    */
@@ -151,6 +158,24 @@ export default function LeavesPage() {
         if (usersResponse.ok && usersData.success) {
           setUsers(usersData.data);
         }
+
+        // ดึงข้อมูลวันหยุด
+        try {
+          const holidaysResponse = await fetch(`/api/holidays?year=${new Date().getFullYear()}`);
+          const holidaysData = await holidaysResponse.json();
+          if (holidaysData.success) {
+            setHolidays(holidaysData.data);
+          }
+        } catch {}
+
+        // ตรวจสอบสิทธิ์ admin
+        try {
+          const sessionRes = await fetch('/api/auth/session');
+          const sessionData = await sessionRes.json();
+          if (sessionData.success && ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(sessionData.data.user.role)) {
+            setCanManage(true);
+          }
+        } catch {}
       } catch (err) {
         setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
       } finally {
@@ -375,13 +400,85 @@ export default function LeavesPage() {
   };
 
   /**
-   * ฟังก์ชันคำนวณจำนวนวัน
+   * ฟังก์ชันคำนวณจำนวนวันทำการ (ไม่นับ ส.-อา. และวันหยุด)
    */
   const calculateDays = (startDate: string | Date, endDate: string | Date): number => {
     const start = new Date(startDate);
     const end = new Date(endDate);
-    const diffTime = Math.abs(end.getTime() - start.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    let count = 0;
+    const current = new Date(start);
+    while (current <= end) {
+      const dayOfWeek = current.getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        const dateStr = current.toISOString().split('T')[0];
+        const isHoliday = holidays.some(h => {
+          const hDate = new Date(h.date).toISOString().split('T')[0];
+          return hDate === dateStr;
+        });
+        if (!isHoliday) {
+          count++;
+        }
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    return count;
+  };
+
+  /**
+   * เพิ่มวันหยุด
+   */
+  const handleAddHoliday = async () => {
+    if (!newHoliday.startDate || !newHoliday.name.trim()) return;
+    try {
+      const response = await fetch('/api/holidays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate: newHoliday.startDate,
+          endDate: newHoliday.endDate || newHoliday.startDate,
+          name: newHoliday.name,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message);
+      if (data.success) {
+        const created = Array.isArray(data.data) ? data.data : [data.data];
+        setHolidays([...holidays, ...created].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+        setNewHoliday({ startDate: '', endDate: '', name: '' });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    }
+  };
+
+  /**
+   * ลบวันหยุด
+   */
+  const handleDeleteHoliday = async (id: number) => {
+    if (!confirm('ต้องการลบวันหยุดนี้ใช่หรือไม่?')) return;
+    try {
+      const response = await fetch(`/api/holidays?id=${id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message);
+      }
+      setHolidays(holidays.filter(h => h.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    }
+  };
+
+  /**
+   * โหลดวันหยุดตามปี
+   */
+  const fetchHolidaysByYear = async (year: number) => {
+    try {
+      const response = await fetch(`/api/holidays?year=${year}`);
+      const data = await response.json();
+      if (data.success) {
+        setHolidays(data.data);
+      }
+    } catch {}
   };
 
   // แสดง loading ขณะโหลดข้อมูล
@@ -404,6 +501,20 @@ export default function LeavesPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {canManage && (
+            <button
+              onClick={() => setIsHolidayPanelOpen(!isHolidayPanelOpen)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
+                isHolidayPanelOpen
+                  ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              )}
+            >
+              <Calendar size={18} />
+              <span>วันหยุด</span>
+            </button>
+          )}
           <button
             onClick={toggleDashboard}
             className={cn(
@@ -445,6 +556,115 @@ export default function LeavesPage() {
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-2">
           <AlertCircle className="w-5 h-5 text-rose-500" />
           <p className="text-rose-600">{error}</p>
+        </div>
+      )}
+
+      {/* Holiday Management Panel */}
+      {isHolidayPanelOpen && canManage && (
+        <div className="bg-white rounded-xl shadow-sm border border-amber-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              <Calendar size={18} className="text-amber-600" />
+              จัดการวันหยุดของหน่วยงาน
+            </h3>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { const y = holidayYear - 1; setHolidayYear(y); fetchHolidaysByYear(y); }}
+                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
+              >
+                <ChevronDown size={16} className="rotate-90" />
+              </button>
+              <span className="text-sm font-medium text-slate-700 min-w-[60px] text-center">
+                ปี {holidayYear + 543}
+              </span>
+              <button
+                onClick={() => { const y = holidayYear + 1; setHolidayYear(y); fetchHolidaysByYear(y); }}
+                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
+              >
+                <ChevronUp size={16} className="rotate-90" />
+              </button>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-500 mb-3">
+            วันลาจะไม่นับวันเสาร์-อาทิตย์ และวันหยุดที่กำหนดไว้ด้านล่าง
+          </p>
+
+          {/* Holiday List */}
+          <div className="space-y-1.5 mb-4 max-h-52 overflow-y-auto">
+            {holidays.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีวันหยุดสำหรับปีนี้</p>
+            ) : (
+              holidays.map((holiday) => (
+                <div key={holiday.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 group">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-200">
+                      {new Date(holiday.date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short' })}
+                    </span>
+                    <span className="text-sm font-medium text-slate-700">{holiday.name}</span>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteHoliday(holiday.id)}
+                    className="text-slate-300 hover:text-rose-500 p-1 rounded hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Add new holiday */}
+          <div className="space-y-2">
+            <div className="flex gap-2 items-end flex-wrap">
+              <div className="flex-shrink-0">
+                <label className="block text-xs font-medium text-slate-500 mb-1">วันที่เริ่มต้น</label>
+                <input
+                  type="date"
+                  value={newHoliday.startDate}
+                  onChange={(e) => setNewHoliday({ ...newHoliday, startDate: e.target.value, endDate: newHoliday.endDate || e.target.value })}
+                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+              <div className="flex-shrink-0">
+                <label className="block text-xs font-medium text-slate-500 mb-1">ถึงวันที่</label>
+                <input
+                  type="date"
+                  value={newHoliday.endDate}
+                  min={newHoliday.startDate}
+                  onChange={(e) => setNewHoliday({ ...newHoliday, endDate: e.target.value })}
+                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+              <div className="flex-1 min-w-[150px]">
+                <label className="block text-xs font-medium text-slate-500 mb-1">ชื่อวันหยุด</label>
+                <input
+                  type="text"
+                  placeholder="เช่น วันสงกรานต์"
+                  value={newHoliday.name}
+                  onChange={(e) => setNewHoliday({ ...newHoliday, name: e.target.value })}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddHoliday()}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+              <button
+                onClick={handleAddHoliday}
+                disabled={!newHoliday.startDate || !newHoliday.name.trim()}
+                className={cn(
+                  "bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 text-sm font-medium transition-colors flex items-center gap-1",
+                  (!newHoliday.startDate || !newHoliday.name.trim()) && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                <Plus size={16} />
+                เพิ่ม
+              </button>
+            </div>
+            {newHoliday.startDate && newHoliday.endDate && newHoliday.startDate !== newHoliday.endDate && (
+              <p className="text-xs text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg">
+                จะเพิ่มวันหยุดติดกัน {Math.ceil((new Date(newHoliday.endDate).getTime() - new Date(newHoliday.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} วัน ({new Date(newHoliday.startDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} - {new Date(newHoliday.endDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })})
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -654,7 +874,7 @@ export default function LeavesPage() {
                           {new Date(leave.endDate).toLocaleDateString('th-TH')}
                         </span>
                         <span className="text-slate-400">
-                          ({calculateDays(leave.startDate, leave.endDate)} วัน)
+                          ({calculateDays(leave.startDate, leave.endDate)} วันทำการ)
                         </span>
                       </div>
                       <span className="hidden sm:inline">•</span>
@@ -927,7 +1147,18 @@ export default function LeavesPage() {
             </div>
             <div className="p-4">
               <LeaveForm 
-                leave={selectedLeave} 
+                leave={selectedLeave}
+                holidays={holidays}
+                previousLeave={
+                  leaves
+                    .filter(l => 
+                      l.userId === selectedLeave.userId && 
+                      l.id !== selectedLeave.id &&
+                      new Date(l.createdAt) < new Date(selectedLeave.createdAt)
+                    )
+                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] || null
+                }
+                userLeaves={leaves.filter(l => l.userId === selectedLeave.userId)}
                 onClose={() => {
                   setShowLeaveForm(false);
                   setSelectedLeave(null);
