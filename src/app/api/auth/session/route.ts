@@ -33,7 +33,8 @@ import { cookies } from 'next/headers';
 export async function GET(request: NextRequest) {
   try {
     // ดึง token จาก cookie
-    const token = cookies().get('session_token')?.value;
+    const cookieStore = await cookies();
+    const token = cookieStore.get('session_token')?.value;
     
     if (!token) {
       return NextResponse.json(
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
     // ตรวจสอบว่า session มีอยู่และยังใช้งานได้
     if (!session || !session.isValid) {
       // ลบ cookie ที่ไม่ valid
-      cookies().delete('session_token');
+      cookieStore.delete('session_token');
       
       return NextResponse.json(
         {
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
       });
       
       // ลบ cookie
-      cookies().delete('session_token');
+      cookieStore.delete('session_token');
       
       return NextResponse.json(
         {

@@ -38,7 +38,7 @@ const updateColumnSchema = z.object({
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // ตรวจสอบการเข้าสู่ระบบ
@@ -62,7 +62,8 @@ export async function PATCH(
       );
     }
 
-    const columnId = parseInt(params.id);
+    const { id } = await params;
+    const columnId = parseInt(id);
 
     if (isNaN(columnId)) {
       return NextResponse.json(
@@ -155,7 +156,7 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // ตรวจสอบการเข้าสู่ระบบ
@@ -179,7 +180,8 @@ export async function DELETE(
       );
     }
 
-    const columnId = parseInt(params.id);
+    const { id } = await params;
+    const columnId = parseInt(id);
 
     if (isNaN(columnId)) {
       return NextResponse.json(

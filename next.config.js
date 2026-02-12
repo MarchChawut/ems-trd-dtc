@@ -47,7 +47,13 @@ const nextConfig = {
   },
   // ปิดการใช้งาน powered by header เพื่อความปลอดภัย
   poweredByHeader: false,
-  // webpack config สำหรับ @react-pdf/renderer
+  // Turbopack config สำหรับ @react-pdf/renderer (Next.js 16+)
+  turbopack: {
+    resolveAlias: {
+      canvas: './empty-module.js',
+    },
+  },
+  // webpack config สำหรับ @react-pdf/renderer (fallback ถ้าใช้ --webpack)
   webpack: (config) => {
     config.resolve.alias.canvas = false;
     return config;

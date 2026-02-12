@@ -28,7 +28,7 @@ import { logger } from '@/lib/logger';
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // ตรวจสอบการเข้าสู่ระบบ
@@ -54,7 +54,8 @@ export async function PATCH(
       );
     }
 
-    const leaveId = parseInt(params.id);
+    const { id } = await params;
+    const leaveId = parseInt(id);
 
     if (isNaN(leaveId)) {
       return NextResponse.json(
@@ -166,7 +167,7 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // ตรวจสอบการเข้าสู่ระบบ
@@ -179,7 +180,8 @@ export async function DELETE(
     }
 
     const currentUser = authResult.user!;
-    const leaveId = parseInt(params.id);
+    const { id } = await params;
+    const leaveId = parseInt(id);
 
     if (isNaN(leaveId)) {
       return NextResponse.json(

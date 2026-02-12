@@ -24,7 +24,8 @@ import { cookies } from 'next/headers';
 export async function POST(request: NextRequest) {
   try {
     // ดึง token จาก cookie
-    const token = cookies().get('session_token')?.value;
+    const cookieStore = await cookies();
+    const token = cookieStore.get('session_token')?.value;
     
     if (token) {
       // ยกเลิก session ในฐานข้อมูล
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
       });
       
       // ลบ cookie
-      cookies().delete('session_token');
+      cookieStore.delete('session_token');
     }
     
     return NextResponse.json({

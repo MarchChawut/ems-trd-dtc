@@ -379,8 +379,8 @@ export default function DashboardPage() {
 
           {/* Chart */}
           {chartDataByPerson.length > 0 ? (
-            <div style={{ height: Math.max(400, chartDataByPerson.length * 60) }}>
-              <ResponsiveContainer width="100%" height="100%">
+            <div>
+              <ResponsiveContainer width="100%" height={Math.max(400, chartDataByPerson.length * 60)}>
                 <BarChart
                   data={chartDataByPerson}
                   layout="vertical"

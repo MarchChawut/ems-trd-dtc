@@ -132,7 +132,9 @@ export default function DashboardLayout({
   }
 
   // หาเมนูปัจจุบัน
-  const currentMenuItem = menuItems.find(item => pathname.startsWith(item.href));
+  const isMenuActive = (href: string) =>
+    href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href);
+  const currentMenuItem = menuItems.find(item => isMenuActive(item.href));
   const pageTitle = currentMenuItem?.label || 'แดชบอร์ด';
 
   return (
@@ -164,7 +166,7 @@ export default function DashboardLayout({
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {menuItems.map((item) => {
-            const isActive = pathname.startsWith(item.href);
+            const isActive = isMenuActive(item.href);
             return (
               <button
                 key={item.id}
@@ -230,7 +232,7 @@ export default function DashboardLayout({
             {/* Navigation */}
             <nav className="flex-1 p-4 space-y-2">
               {menuItems.map((item) => {
-                const isActive = pathname.startsWith(item.href);
+                const isActive = isMenuActive(item.href);
                 return (
                   <button
                     key={item.id}

@@ -36,7 +36,8 @@ interface AuthResult {
 export async function requireAuth(request: NextRequest): Promise<AuthResult> {
   try {
     // ดึง token จาก cookie
-    const token = cookies().get('session_token')?.value;
+    const cookieStore = await cookies();
+    const token = cookieStore.get('session_token')?.value;
     
     if (!token) {
       return {
@@ -55,7 +56,7 @@ export async function requireAuth(request: NextRequest): Promise<AuthResult> {
     
     // ตรวจสอบว่า session มีอยู่และยังใช้งานได้
     if (!session || !session.isValid) {
-      cookies().delete('session_token');
+      cookieStore.delete('session_token');
       return {
         success: false,
         error: 'INVALID_SESSION',
@@ -71,7 +72,7 @@ export async function requireAuth(request: NextRequest): Promise<AuthResult> {
         data: { isValid: false },
       });
       
-      cookies().delete('session_token');
+      cookieStore.delete('session_token');
       
       return {
         success: false,
@@ -147,7 +148,8 @@ export function isManagerOrAbove(userRole: UserRole): boolean {
  */
 export async function getCurrentUser(): Promise<SessionUser | null> {
   try {
-    const token = cookies().get('session_token')?.value;
+    const cookieStore = await cookies();
+    const token = cookieStore.get('session_token')?.value;
     
     if (!token) {
       return null;
@@ -182,7 +184,8 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
  */
 export async function validateSession(): Promise<AuthResult> {
   try {
-    const token = cookies().get('session_token')?.value;
+    const cookieStore = await cookies();
+    const token = cookieStore.get('session_token')?.value;
     
     if (!token) {
       return {
@@ -199,7 +202,7 @@ export async function validateSession(): Promise<AuthResult> {
     });
     
     if (!session || !session.isValid) {
-      cookies().delete('session_token');
+      cookieStore.delete('session_token');
       return {
         success: false,
         error: 'INVALID_SESSION',
@@ -214,7 +217,7 @@ export async function validateSession(): Promise<AuthResult> {
         data: { isValid: false },
       });
       
-      cookies().delete('session_token');
+      cookieStore.delete('session_token');
       
       return {
         success: false,

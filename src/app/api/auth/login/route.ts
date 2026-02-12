@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
     // สร้าง cookie สำหรับ session
     const sameSiteEnv = process.env.COOKIE_SAMESITE as "lax" | "strict" | "none" | undefined;
     
-    cookies().set('session_token', token, {
+    (await cookies()).set('session_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
