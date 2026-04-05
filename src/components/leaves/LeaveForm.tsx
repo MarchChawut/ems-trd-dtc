@@ -10,6 +10,7 @@
 import React, { useRef, useState } from "react";
 import { Printer, X, FileDown, Loader2 } from "lucide-react";
 import { Leave, LeaveType, User, Holiday } from "@/types";
+import { formatSignatureName } from "@/lib/utils";
 import { generateLeavePDF } from "./LeaveFormPDF";
 import "./pdf-fonts";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
@@ -63,6 +64,7 @@ const leaveTypeLabels: Record<LeaveType, { short: string; full: string }> = {
   VACATION: { short: "พักร้อน", full: "ลาพักร้อน" },
   MATERNITY: { short: "คลอดบุตร", full: "ลาคลอดบุตร" },
   ORDINATION: { short: "บวช", full: "ลาบวช" },
+  EARLY_LEAVE: { short: "ออกก่อนเวลา", full: "ออกก่อนเวลา" },
   OTHER: { short: "อื่นๆ", full: "ลาอื่นๆ" },
 };
 
@@ -91,7 +93,9 @@ function formatThaiDate(date: Date | string): {
     "ธันวาคม",
   ];
   const month = months[d.getMonth()];
-  const year = (d.getFullYear() + 543).toString(); // แปลงเป็นพ.ศ.
+  // แปลงเป็น พ.ศ. อย่างปลอดภัย (ป้องกันบวก 543 ซ้ำ กรณีปีเป็น พ.ศ. อยู่แล้ว)
+  const rawYear = d.getFullYear();
+  const year = (rawYear > 2500 ? rawYear : rawYear + 543).toString();
   return { day, month, year };
 }
 
@@ -238,7 +242,10 @@ export default function LeaveForm({
 
   const startDate = formatThaiDate(leave.startDate);
   const endDate = formatThaiDate(leave.endDate);
-  const currentDate = formatThaiDate(new Date());
+  // ใช้วันที่ที่สร้างใบลา (createdAt) เพื่อให้เมื่อเปิดย้อนหลังยังเป็นวันที่เขียนจริง
+  const documentDate = formatThaiDate(
+    (leave as any).createdAt ? new Date((leave as any).createdAt) : new Date()
+  );
   const leaveDays = calculateLeaveDays(
     leave.startDate,
     leave.endDate,
@@ -265,7 +272,7 @@ export default function LeaveForm({
       <!DOCTYPE html>
       <html>
       <head>
-        <title>แบบใบลา - ${leave.user.name}</title>
+        <title>แบบใบลา - ${(leave.user as any).prefix || ''}${leave.user.name}</title>
         <style>
           @page { size: A4; margin: 0; }
           @font-face {
@@ -409,7 +416,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง
+                  ศูนย์เทคโนโลยีดิจิทัล หน่วยราชการในพระองค์
                 </span>
               </div>
               <div>
@@ -422,7 +429,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  {currentDate.day}
+                  {documentDate.day}
                 </span>
                 เดือน
                 <span
@@ -433,7 +440,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  {currentDate.month}
+                  {documentDate.month}
                 </span>
                 พ.ศ.
                 <span
@@ -444,7 +451,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  {currentDate.year}
+                  {documentDate.year}
                 </span>
               </div>
             </div>
@@ -495,7 +502,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  {leave.user.name}
+                  {leave.user.prefix}{leave.user.name}
                 </span>
                 <span style={{ whiteSpace: "nowrap", marginLeft: "1mm" }}>
                   ตำแหน่ง
@@ -534,7 +541,7 @@ export default function LeaveForm({
                     textAlign: "center",
                   }}
                 >
-                  ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง
+                  ศูนย์เทคโนโลยีดิจิทัล หน่วยราชการในพระองค์
                 </span>
               </div>
 
@@ -872,13 +879,19 @@ export default function LeaveForm({
                     borderBottom: "0.5pt dotted black",
                     display: "inline-block",
                     minWidth: "20mm",
+                    textAlign: "center",
+                    fontWeight: "bold",
                   }}
-                ></span>
+                >
+                  {(leave as any).contactAddress || (leave.user as any).address || ""}
+                </span>
               </div>
               <div style={{ display: "flex", marginBottom: "2mm" }}>
                 <span
                   style={{ borderBottom: "0.5pt dotted black", flex: 1 }}
-                ></span>
+                >
+                  {/* ต่อจากสถานที่พัก (กรณีข้อความยาว) */}
+                </span>
                 <span style={{ whiteSpace: "nowrap", margin: "0 2mm" }}>
                   หมายเลขโทรศัพท์
                 </span>
@@ -887,8 +900,12 @@ export default function LeaveForm({
                     borderBottom: "0.5pt dotted black",
                     display: "inline-block",
                     minWidth: "40mm",
+                    textAlign: "center",
+                    fontWeight: "bold",
                   }}
-                ></span>
+                >
+                  {(leave.user as any).phone || ""}
+                </span>
               </div>
             </div>
 
@@ -900,30 +917,43 @@ export default function LeaveForm({
                 fontSize: "16pt",
               }}
             >
-              <div style={{ marginBottom: "1mm" }}>
-                ลงชื่อ
-                <span
-                  style={{
-                    borderBottom: "0.5pt dotted black",
-                    display: "inline-block",
-                    minWidth: "55mm",
-                  }}
-                ></span>
-              </div>
-              <div style={{ marginLeft: "8mm" }}>
-                {"("}{" "}
-                <span
-                  style={{
-                    borderBottom: "0.5pt dotted black",
-                    display: "inline-block",
-                    minWidth: "50mm",
-                    textAlign: "center",
-                  }}
-                >
-                  {leave.user.name}
-                </span>{" "}
-                {")"}
-              </div>
+              {(() => {
+                const sig = formatSignatureName(
+                  (leave.user as any).prefix,
+                  (leave.user as any).name
+                );
+                return (
+                  <>
+                    <div style={{ marginBottom: "1mm" }}>
+                      ลงชื่อ{sig.linePrefix ? ` ${sig.linePrefix}` : ""}{" "}
+                      <span
+                        style={{
+                          borderBottom: "0.5pt dotted black",
+                          display: "inline-block",
+                          minWidth: "55mm",
+                          textAlign: "left",
+                        }}
+                      >
+                        {" "}
+                      </span>
+                    </div>
+                    <div style={{ marginLeft: "8mm" }}>
+                      {"("}{" "}
+                      <span
+                        style={{
+                          borderBottom: "0.5pt dotted black",
+                          display: "inline-block",
+                          minWidth: "50mm",
+                          textAlign: "center",
+                        }}
+                      >
+                        {sig.parenName}
+                      </span>{" "}
+                      {")"}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             {/* ตารางสถิติ + ความเห็น */}

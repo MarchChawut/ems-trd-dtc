@@ -3,7 +3,7 @@
  * API Route: GET /api/leaves/export
  * ==================================================
  * API สำหรับ Export ข้อมูลการลาเป็น CSV
- * รองรับการกรองด้วยชื่อและระยะเวลา
+ * รองรับการกรองด้วยชื่อ ระยะเวลา และเลือกคอลัมน์
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -12,39 +12,52 @@ import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
 /**
- * แปลงข้อมูลเป็น CSV format
+ * คอลัมน์ทั้งหมดที่รองรับ
  */
-function convertToCSV(data: any[]): string {
+const ALL_COLUMNS = ['id', 'name', 'department', 'type', 'startDate', 'endDate', 'days', 'reason', 'status', 'approvedBy', 'createdAt'] as const;
+type ColumnKey = typeof ALL_COLUMNS[number];
+
+const COLUMN_HEADERS: Record<ColumnKey, string> = {
+  id: 'รหัส',
+  name: 'ชื่อพนักงาน',
+  department: 'แผนก',
+  type: 'ประเภทการลา',
+  startDate: 'วันที่เริ่ม',
+  endDate: 'วันที่สิ้นสุด',
+  days: 'จำนวนวัน',
+  reason: 'เหตุผล',
+  status: 'สถานะ',
+  approvedBy: 'ผู้อนุมัติ',
+  createdAt: 'วันที่บันทึก',
+};
+
+/**
+ * แปลงข้อมูลเป็น CSV format พร้อมเลือกคอลัมน์
+ */
+function convertToCSV(data: any[], columns: ColumnKey[]): string {
   if (data.length === 0) return '';
-  
-  const headers = [
-    'รหัส',
-    'ชื่อพนักงาน',
-    'แผนก',
-    'ประเภทการลา',
-    'วันที่เริ่ม',
-    'วันที่สิ้นสุด',
-    'จำนวนวัน',
-    'เหตุผล',
-    'สถานะ',
-    'ผู้อนุมัติ',
-    'วันที่บันทึก',
-  ];
-  
-  const rows = data.map(item => [
-    item.id,
-    item.user.name,
-    item.user.department || '-',
-    translateLeaveType(item.type),
-    formatDate(item.startDate),
-    formatDate(item.endDate),
-    calculateDays(item.startDate, item.endDate),
-    `"${item.reason.replace(/"/g, '""')}"`, // Escape quotes
-    translateStatus(item.status),
-    item.approvedBy || '-',
-    formatDate(item.createdAt),
-  ]);
-  
+
+  const headers = columns.map(col => COLUMN_HEADERS[col]);
+
+  const rows = data.map(item => {
+    return columns.map(col => {
+      switch (col) {
+        case 'id': return item.id;
+        case 'name': return `${item.user.prefix || ''}${item.user.name}`;
+        case 'department': return item.user.department || '-';
+        case 'type': return translateLeaveType(item.type);
+        case 'startDate': return formatDate(item.startDate);
+        case 'endDate': return formatDate(item.endDate);
+        case 'days': return calculateDays(item.startDate, item.endDate, item.isHalfDay, item.hours);
+        case 'reason': return `"${item.reason.replace(/"/g, '""')}"`;
+        case 'status': return translateStatus(item.status);
+        case 'approvedBy': return item.approvedBy || '-';
+        case 'createdAt': return formatDate(item.createdAt);
+        default: return '';
+      }
+    });
+  });
+
   // Add BOM for Thai language support
   return '\uFEFF' + [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
 }
@@ -57,6 +70,9 @@ function translateLeaveType(type: string): string {
     'SICK': 'ลาป่วย',
     'PERSONAL': 'ลากิจ',
     'VACATION': 'ลาพักร้อน',
+    'MATERNITY': 'ลาคลอดบุตร',
+    'ORDINATION': 'ลาบวช',
+    'EARLY_LEAVE': 'ออกก่อนเวลา',
     'OTHER': 'อื่นๆ',
   };
   return types[type] || type;
@@ -87,23 +103,31 @@ function formatDate(date: Date | string): string {
 }
 
 /**
- * คำนวณจำนวนวัน
+ * คำนวณจำนวนวัน (รองรับครึ่งวันและรายชั่วโมง)
  */
-function calculateDays(startDate: Date | string, endDate: Date | string): number {
+function calculateDays(startDate: Date | string, endDate: Date | string, isHalfDay?: boolean, hours?: number | null): string {
+  if (hours && hours > 0) {
+    if (hours <= 3) return '0.5';
+    if (hours >= 8) return '1';
+    return (hours / 8).toFixed(1);
+  }
+  if (isHalfDay) return '0.5';
   const start = new Date(startDate);
   const end = new Date(endDate);
-  return Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  return days.toString();
 }
 
 /**
  * GET /api/leaves/export
  * Export ข้อมูลการลาเป็น CSV
- * 
+ *
  * Query Parameters:
  * - name: ค้นหาด้วยชื่อพนักงาน
  * - startDate: วันเริ่มต้น (YYYY-MM-DD)
  * - endDate: วันสิ้นสุด (YYYY-MM-DD)
- * 
+ * - columns: คอลัมน์ที่ต้องการ (comma-separated)
+ *
  * Response: CSV file download
  */
 export async function GET(request: NextRequest) {
@@ -122,6 +146,20 @@ export async function GET(request: NextRequest) {
     const name = searchParams.get('name');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const columnsParam = searchParams.get('columns');
+
+    // กำหนดคอลัมน์ที่จะ export
+    let selectedColumns: ColumnKey[];
+    if (columnsParam) {
+      selectedColumns = columnsParam.split(',').filter(
+        (col): col is ColumnKey => ALL_COLUMNS.includes(col as ColumnKey)
+      );
+      if (selectedColumns.length === 0) {
+        selectedColumns = [...ALL_COLUMNS];
+      }
+    } else {
+      selectedColumns = [...ALL_COLUMNS];
+    }
 
     // สร้าง where clause
     const where: any = {};
@@ -154,6 +192,7 @@ export async function GET(request: NextRequest) {
         user: {
           select: {
             id: true,
+            prefix: true,
             name: true,
             department: true,
           },
@@ -163,7 +202,7 @@ export async function GET(request: NextRequest) {
     });
 
     // แปลงเป็น CSV
-    const csv = convertToCSV(leaves);
+    const csv = convertToCSV(leaves, selectedColumns);
 
     // สร้างชื่อไฟล์
     const fileName = `leaves_export_${new Date().toISOString().split('T')[0]}.csv`;

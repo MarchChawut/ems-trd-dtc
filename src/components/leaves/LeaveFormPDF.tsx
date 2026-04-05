@@ -11,6 +11,7 @@ import {
   PDFDownloadLink,
 } from "@react-pdf/renderer";
 import { Leave, LeaveType, User } from "@/types";
+import { formatSignatureName } from "@/lib/utils";
 
 // ลงทะเบียนฟอนต์ไทย (Sarabun จาก Google Fonts)
 Font.register({
@@ -48,6 +49,7 @@ const leaveTypeLabels: Record<LeaveType, { short: string; full: string }> = {
   VACATION: { short: "พักร้อน", full: "ลาพักร้อน" },
   MATERNITY: { short: "คลอดบุตร", full: "ลาคลอดบุตร" },
   ORDINATION: { short: "บวช", full: "ลาบวช" },
+  EARLY_LEAVE: { short: "ออกก่อนเวลา", full: "ออกก่อนเวลา" },
   OTHER: { short: "อื่นๆ", full: "ลาอื่นๆ" },
 };
 
@@ -71,7 +73,8 @@ function formatThaiDate(date: Date | string) {
   return {
     day: d.getDate().toString(),
     month: thaiMonths[d.getMonth()],
-    year: (d.getFullYear() + 543).toString(),
+    // แปลงเป็น พ.ศ. อย่างปลอดภัย (ป้องกันบวก 543 ซ้ำ)
+    year: (d.getFullYear() > 2500 ? d.getFullYear() : d.getFullYear() + 543).toString(),
   };
 }
 
@@ -239,7 +242,10 @@ const styles = StyleSheet.create({
 function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
   const startDate = formatThaiDate(leave.startDate);
   const endDate = formatThaiDate(leave.endDate);
-  const currentDate = formatThaiDate(new Date());
+  // ใช้วันที่ที่สร้างใบลา (createdAt) เพื่อให้เมื่อเปิดย้อนหลังยังเป็นวันที่เขียนจริง
+  const documentDate = formatThaiDate(
+    (leave as any).createdAt ? new Date((leave as any).createdAt) : new Date()
+  );
   const leaveDays = calculateLeaveDays(
     leave.startDate,
     leave.endDate,
@@ -275,15 +281,15 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
           <View style={styles.rightRow}>
             <Text style={styles.label}>วันที่ </Text>
             <Text style={[styles.dottedLine, { minWidth: 25 }]}>
-              {currentDate.day}
+              {documentDate.day}
             </Text>
             <Text style={styles.label}> เดือน </Text>
             <Text style={[styles.dottedLine, { minWidth: 60 }]}>
-              {currentDate.month}
+              {documentDate.month}
             </Text>
             <Text style={styles.label}> พ.ศ. </Text>
             <Text style={[styles.dottedLine, { minWidth: 40 }]}>
-              {currentDate.year}
+              {documentDate.year}
             </Text>
           </View>
         </View>
@@ -315,7 +321,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
         {/* ข้าพเจ้า + ตำแหน่ง */}
         <View style={[styles.row, { paddingLeft: 28 }]}>
           <Text style={styles.label}>ข้าพเจ้า </Text>
-          <Text style={[styles.dottedLineLong]}>{leave.user.name}</Text>
+          <Text style={[styles.dottedLineLong]}>{(leave.user as any).prefix}{leave.user.name}</Text>
           <Text style={styles.label}> ตำแหน่ง </Text>
           <Text style={[styles.dottedLineLong]}>
             {leave.user.position || ""}
@@ -369,7 +375,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
           </Text>
         </View>
 
-        {/* คลอดบุตร (บรรทัดแยก) */}
+        {/* คลอดบุตร + ออกก่อนเวลา (บรรทัดแยก) */}
         <View style={[styles.row, { paddingLeft: 40, marginBottom: 4 }]}>
           <View style={styles.checkboxRow}>
             <View
@@ -381,6 +387,18 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
               style={leave.type === "MATERNITY" ? { fontWeight: "bold" } : {}}
             >
               คลอดบุตร
+            </Text>
+          </View>
+          <View style={[styles.checkboxRow, { marginLeft: 12 }]}>
+            <View
+              style={
+                leave.type === "EARLY_LEAVE" ? styles.circleFilled : styles.circle
+              }
+            />
+            <Text
+              style={leave.type === "EARLY_LEAVE" ? { fontWeight: "bold" } : {}}
+            >
+              ออกก่อนเวลา
             </Text>
           </View>
         </View>
@@ -456,6 +474,18 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
               คลอดบุตร
             </Text>
           </View>
+          <View style={[styles.checkboxRow, { marginRight: 3 }]}>
+            <View
+              style={
+                leave.type === "EARLY_LEAVE" ? styles.circleFilled : styles.circle
+              }
+            />
+            <Text
+              style={leave.type === "EARLY_LEAVE" ? { fontWeight: "bold" } : {}}
+            >
+              ออกก่อนเวลา
+            </Text>
+          </View>
           <Text style={styles.label}> ครั้งสุดท้ายตั้งแต่วันที่ </Text>
           <Text style={[styles.dottedLine, { minWidth: 20 }]}>
             {startDate.day}
@@ -494,30 +524,54 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
             {" "}
             ในระหว่างลาจะติดต่อข้าพเจ้าได้ที่{" "}
           </Text>
-          <Text style={[styles.dottedLine, { minWidth: 35 }]}> </Text>
+          <Text style={[styles.dottedLine, { minWidth: 35 }]}>
+            {(leave as any).contactAddress || (leave.user as any).address || " "}
+          </Text>
         </View>
 
         {/* ...หมายเลขโทรศัพท์ */}
         <View style={[styles.row, { marginBottom: 1 }]}>
-          <Text style={[styles.dottedLineLong]}> </Text>
+          <Text style={[styles.dottedLineLong]}>
+            {" "}
+          </Text>
           <Text style={styles.label}> หมายเลขโทรศัพท์ </Text>
-          <Text style={[styles.dottedLine, { minWidth: 100 }]}> </Text>
+          <Text style={[styles.dottedLine, { minWidth: 100 }]}>
+            {(leave.user as any).phone || " "}
+          </Text>
         </View>
 
         {/* ลงชื่อผู้ลา */}
-        <View style={styles.signSection}>
-          <View style={styles.rowCenter}>
-            <Text style={styles.label}>ลงชื่อ </Text>
-            <Text style={[styles.dottedLine, { minWidth: 140 }]}> </Text>
-          </View>
-          <View style={[styles.rowCenter, { marginLeft: 20 }]}>
-            <Text>( </Text>
-            <Text style={[styles.dottedLine, { minWidth: 130 }]}>
-              {leave.user.name}
-            </Text>
-            <Text> )</Text>
-          </View>
-        </View>
+        {(() => {
+          const sig = formatSignatureName(
+            (leave.user as any).prefix,
+            leave.user.name
+          );
+          return (
+            <View style={styles.signSection}>
+              <View style={styles.rowCenter}>
+                <Text style={styles.label}>ลงชื่อ </Text>
+                {sig.linePrefix ? (
+                  <Text style={styles.label}>{sig.linePrefix} </Text>
+                ) : null}
+                <Text
+                  style={[
+                    styles.dottedLine,
+                    { minWidth: 140, textAlign: "center" },
+                  ]}
+                >
+                  {" "}
+                </Text>
+              </View>
+              <View style={[styles.rowCenter, { marginLeft: 20 }]}>
+                <Text>( </Text>
+                <Text style={[styles.dottedLine, { minWidth: 130 }]}>
+                  {sig.parenName}
+                </Text>
+                <Text> )</Text>
+              </View>
+            </View>
+          );
+        })()}
 
         {/* สถิติ + ความเห็น (2 คอลัมน์) */}
         <View style={styles.twoColumn}>
@@ -590,6 +644,24 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
                 </Text>
                 <Text style={styles.tableCell}>
                   {leave.type === "MATERNITY"
+                    ? `${stats.totalCount}/${stats.totalDays}`
+                    : ""}
+                </Text>
+              </View>
+              <View style={styles.tableRow}>
+                <Text style={[styles.tableCell, { fontSize: 12 }]}>ออกก่อนเวลา</Text>
+                <Text style={styles.tableCell}>
+                  {leave.type === "EARLY_LEAVE"
+                    ? `${stats.pastCount}/${stats.pastDays}`
+                    : ""}
+                </Text>
+                <Text style={styles.tableCell}>
+                  {leave.type === "EARLY_LEAVE"
+                    ? `${stats.currentCount}/${stats.currentDays}`
+                    : ""}
+                </Text>
+                <Text style={styles.tableCell}>
+                  {leave.type === "EARLY_LEAVE"
                     ? `${stats.totalCount}/${stats.totalDays}`
                     : ""}
                 </Text>

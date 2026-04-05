@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         id: true,
+        prefix: true,
         name: true,
         avatar: true,
         department: true,
@@ -92,6 +93,7 @@ export async function GET(request: NextRequest) {
         user: {
           select: {
             id: true,
+            prefix: true,
             name: true,
             avatar: true,
             department: true,

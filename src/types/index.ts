@@ -30,6 +30,8 @@ export interface User {
   position: string | null; // ตำแหน่ง เช่น จนท.ฝ่ายธุรการ
   positionSecond: string | null; // ตำแหน่งรอง เช่น เจ้าหน้าที่งานในพระองค์
   positionLevel: number | null; // ระดับ 1-11
+  phone: string | null; // เบอร์โทรศัพท์
+  address: string | null; // ที่อยู่
   avatar: string | null;
   profileImage: string | null;
   isActive: boolean;
@@ -113,6 +115,8 @@ export interface UpdateUserInput {
   position?: string;
   positionSecond?: string;
   positionLevel?: number;
+  phone?: string | null;
+  address?: string | null;
   profileImage?: string | null;
   isActive?: boolean;
 }
@@ -186,7 +190,7 @@ export interface UpdateTaskInput {
 /**
  * ประเภทการลา
  */
-export type LeaveType = 'SICK' | 'PERSONAL' | 'VACATION' | 'MATERNITY' | 'ORDINATION' | 'OTHER';
+export type LeaveType = 'SICK' | 'PERSONAL' | 'VACATION' | 'MATERNITY' | 'ORDINATION' | 'EARLY_LEAVE' | 'OTHER';
 
 /**
  * สถานะการลา
@@ -210,6 +214,7 @@ export interface Leave {
   isHalfDay: boolean;
   hours: number | null;
   totalDays: number;
+  contactAddress: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -224,6 +229,7 @@ export interface CreateLeaveInput {
   reason: string;
   isHalfDay?: boolean;
   hours?: number;
+  contactAddress?: string; // สถานที่พักขณะลา
 }
 
 /**

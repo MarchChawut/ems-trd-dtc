@@ -23,6 +23,8 @@ const updateUserSchema = z.object({
   position: z.string().max(100).nullable().optional(),
   positionSecond: z.string().max(100).nullable().optional(),
   positionLevel: z.number().int().min(1).max(11).nullable().optional(),
+  phone: z.string().max(20).nullable().optional(),
+  address: z.string().max(500).nullable().optional(),
   profileImage: z.string().max(500).nullable().optional(),
   isActive: z.boolean().optional(),
   password: z.string().min(8, 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร').optional(),
@@ -81,6 +83,8 @@ export async function GET(
         position: true,
         positionSecond: true,
         positionLevel: true,
+        phone: true,
+        address: true,
         avatar: true,
         profileImage: true,
         isActive: true,
@@ -281,6 +285,14 @@ export async function PATCH(
       updateData.positionLevel = validationResult.data.positionLevel;
     }
 
+    if (validationResult.data.phone !== undefined) {
+      updateData.phone = validationResult.data.phone ? sanitizeInput(validationResult.data.phone) : null;
+    }
+
+    if (validationResult.data.address !== undefined) {
+      updateData.address = validationResult.data.address ? sanitizeInput(validationResult.data.address) : null;
+    }
+
     if (validationResult.data.profileImage !== undefined) {
       updateData.profileImage = validationResult.data.profileImage;
     }
@@ -305,6 +317,8 @@ export async function PATCH(
         position: true,
         positionSecond: true,
         positionLevel: true,
+        phone: true,
+        address: true,
         avatar: true,
         profileImage: true,
         isActive: true,

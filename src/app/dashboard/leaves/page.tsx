@@ -13,11 +13,11 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Plus, 
-  CheckCircle, 
-  XCircle, 
-  Trash2, 
+import {
+  Plus,
+  CheckCircle,
+  XCircle,
+  Trash2,
   Loader2,
   AlertCircle,
   Calendar,
@@ -28,7 +28,8 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Pencil
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Leave, LeaveType, LeaveStatus, User, Holiday } from '@/types';
@@ -43,6 +44,7 @@ const leaveTypeConfig: Record<LeaveType, { label: string; bg: string; text: stri
   VACATION: { label: 'ลาพักร้อน', bg: 'bg-blue-100', text: 'text-blue-600', icon: '🏖️' },
   MATERNITY: { label: 'ลาคลอดบุตร', bg: 'bg-pink-100', text: 'text-pink-600', icon: '👶' },
   ORDINATION: { label: 'ลาบวช', bg: 'bg-purple-100', text: 'text-purple-600', icon: '🧘' },
+  EARLY_LEAVE: { label: 'ออกก่อนเวลา', bg: 'bg-orange-100', text: 'text-orange-600', icon: '🕐' },
   OTHER: { label: 'อื่นๆ', bg: 'bg-slate-100', text: 'text-slate-600', icon: '📝' },
 };
 
@@ -124,11 +126,31 @@ export default function LeavesPage() {
     startDate: '',
     endDate: '',
     reason: '',
+    contactAddress: '',
   });
   // โหมดการลา: fullday / halfday / hours
   const [leaveMode, setLeaveMode] = useState<'fullday' | 'halfday' | 'hours'>('fullday');
   const [halfDayPeriod, setHalfDayPeriod] = useState<'MORNING' | 'AFTERNOON'>('MORNING');
   const [leaveHours, setLeaveHours] = useState<number>(1);
+
+  // State สำหรับโหมดแก้ไข
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingLeaveId, setEditingLeaveId] = useState<number | null>(null);
+
+  // State สำหรับ Export column checkboxes
+  const [exportColumns, setExportColumns] = useState({
+    id: true,
+    name: true,
+    department: true,
+    type: true,
+    startDate: true,
+    endDate: true,
+    days: true,
+    reason: true,
+    status: true,
+    approvedBy: true,
+    createdAt: true,
+  });
 
   // State สำหรับวันหยุด
   const [holidays, setHolidays] = useState<Holiday[]>([]);
@@ -281,7 +303,15 @@ export default function LeavesPage() {
       if (exportEndDate) {
         params.push(`endDate=${exportEndDate}`);
       }
-      
+
+      // ส่งคอลัมน์ที่เลือก
+      const selectedCols = Object.entries(exportColumns)
+        .filter(([, v]) => v)
+        .map(([k]) => k);
+      if (selectedCols.length > 0) {
+        params.push(`columns=${selectedCols.join(',')}`);
+      }
+
       url += params.join('&');
       
       const response = await fetch(url);
@@ -314,11 +344,37 @@ export default function LeavesPage() {
   };
 
   /**
-   * ฟังก์ชันสร้างรายการลาใหม่
+   * เปิดฟอร์มแก้ไขรายการลา
+   */
+  const handleEditLeave = (leave: Leave) => {
+    setIsEditMode(true);
+    setEditingLeaveId(leave.id);
+    setNewLeave({
+      userId: leave.userId.toString(),
+      type: leave.type,
+      startDate: new Date(leave.startDate).toISOString().split('T')[0],
+      endDate: new Date(leave.endDate).toISOString().split('T')[0],
+      reason: leave.reason.replace(/^\[(ครึ่งวันเช้า|ครึ่งวันบ่าย|ลา [\d.]+ ชม\.)\]\s*/, ''),
+      contactAddress: (leave as any).contactAddress || '',
+    });
+    if (leave.isHalfDay) {
+      setLeaveMode('halfday');
+      setHalfDayPeriod(leave.reason.includes('ครึ่งวันบ่าย') ? 'AFTERNOON' : 'MORNING');
+    } else if (leave.hours && leave.hours > 0) {
+      setLeaveMode('hours');
+      setLeaveHours(leave.hours);
+    } else {
+      setLeaveMode('fullday');
+    }
+    setIsModalOpen(true);
+  };
+
+  /**
+   * ฟังก์ชันสร้าง/แก้ไขรายการลา
    */
   const handleCreateLeave = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!newLeave.userId || !newLeave.startDate || !newLeave.reason.trim()) {
       setError('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
@@ -328,7 +384,7 @@ export default function LeavesPage() {
       setError('กรุณาระบุวันที่สิ้นสุด');
       return;
     }
-    
+
     try {
       const payload: Record<string, any> = {
         ...newLeave,
@@ -349,27 +405,45 @@ export default function LeavesPage() {
         payload.reason = `[ลา ${leaveHours} ชม.] ${newLeave.reason}`;
       }
 
-      const response = await fetch('/api/leaves', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      
+      let response: Response;
+      if (isEditMode && editingLeaveId) {
+        // แก้ไขรายการลา
+        response = await fetch(`/api/leaves/${editingLeaveId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        // สร้างรายการลาใหม่
+        response = await fetch('/api/leaves', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.message || 'ไม่สามารถบันทึกการลาได้');
       }
-      
+
       if (data.success) {
-        setLeaves([data.data, ...leaves]);
+        if (isEditMode && editingLeaveId) {
+          setLeaves(leaves.map(l => l.id === editingLeaveId ? data.data : l));
+        } else {
+          setLeaves([data.data, ...leaves]);
+        }
         setIsModalOpen(false);
+        setIsEditMode(false);
+        setEditingLeaveId(null);
         setNewLeave({
           userId: '',
           type: 'SICK',
           startDate: '',
           endDate: '',
           reason: '',
+          contactAddress: '',
         });
         setLeaveMode('fullday');
         setHalfDayPeriod('MORNING');
@@ -807,7 +881,7 @@ export default function LeavesPage() {
                             {item.user.avatar || item.user.name.charAt(0)}
                           </div>
                           <div>
-                            <p className="font-medium text-slate-700">{item.user.name}</p>
+                            <p className="font-medium text-slate-700">{item.user.prefix}{item.user.name}</p>
                             <p className="text-xs text-slate-400">{item.user.department}</p>
                           </div>
                         </div>
@@ -879,7 +953,7 @@ export default function LeavesPage() {
                   {/* รายละเอียด */}
                   <div>
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <h3 className="font-bold text-slate-800">{leave.user.name}</h3>
+                      <h3 className="font-bold text-slate-800">{leave.user.prefix}{leave.user.name}</h3>
                       <span
                         className={cn(
                           "px-2.5 py-0.5 rounded-full text-xs font-medium",
@@ -917,6 +991,13 @@ export default function LeavesPage() {
 
                 {/* ปุ่มดำเนินการ */}
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleEditLeave(leave)}
+                    className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                    title="แก้ไขรายละเอียด"
+                  >
+                    <Pencil size={18} />
+                  </button>
                   <button
                     onClick={() => {
                       setSelectedLeave(leave);
@@ -965,9 +1046,17 @@ export default function LeavesPage() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
             {/* Header */}
             <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
-              <h3 className="font-bold text-slate-800">บันทึกการลา</h3>
+              <h3 className="font-bold text-slate-800">
+                {isEditMode ? 'แก้ไขรายการลา' : 'บันทึกการลา'}
+              </h3>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setIsEditMode(false);
+                  setEditingLeaveId(null);
+                  setNewLeave({ userId: '', type: 'SICK', startDate: '', endDate: '', reason: '' });
+                  setLeaveMode('fullday');
+                }}
                 className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"
               >
                 <X size={20} />
@@ -990,7 +1079,7 @@ export default function LeavesPage() {
                   <option value="">เลือกพนักงาน...</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>
-                      {user.name} {user.department && `(${user.department})`}
+                      {user.prefix}{user.name} {user.department && `(${user.department})`}
                     </option>
                   ))}
                 </select>
@@ -1010,6 +1099,7 @@ export default function LeavesPage() {
                   <option value="VACATION">ลาพักร้อน</option>
                   <option value="MATERNITY">ลาคลอดบุตร</option>
                   <option value="ORDINATION">ลาบวช</option>
+                  <option value="EARLY_LEAVE">ออกก่อนเวลา</option>
                   <option value="OTHER">อื่นๆ</option>
                 </select>
               </div>
@@ -1095,17 +1185,33 @@ export default function LeavesPage() {
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     จำนวนชั่วโมง
                   </label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map((h) => (
+                      <button
+                        key={h}
+                        type="button"
+                        onClick={() => setLeaveHours(h)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                          leaveHours === h
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {h} ชม.
+                      </button>
+                    ))}
+                  </div>
                   <div className="flex items-center gap-3">
                     <input
                       type="number"
-                      min={1}
+                      min={0.5}
                       max={7}
-                      step={1}
+                      step={0.5}
                       value={leaveHours}
-                      onChange={(e) => setLeaveHours(Math.max(1, Math.min(7, parseInt(e.target.value) || 1)))}
+                      onChange={(e) => setLeaveHours(Math.max(0.5, Math.min(7, parseFloat(e.target.value) || 0.5)))}
                       className="w-24 border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-center"
                     />
-                    <span className="text-sm text-slate-500">ชั่วโมง (1-7 ชม.)</span>
+                    <span className="text-sm text-slate-500">ชั่วโมง (0.5-8 ชม.)</span>
                   </div>
                 </div>
               )}
@@ -1154,11 +1260,24 @@ export default function LeavesPage() {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  สถานที่พักขณะลาครั้งนี้
+                </label>
+                <textarea
+                  rows={2}
+                  className="w-full border border-slate-300 rounded-lg p-2.5 outline-none resize-none"
+                  placeholder="ระบุสถานที่พักที่สามารถติดต่อได้ระหว่างลา..."
+                  value={newLeave.contactAddress}
+                  onChange={(e) => setNewLeave({ ...newLeave, contactAddress: e.target.value })}
+                />
+              </div>
+
               <button
                 type="submit"
                 className="w-full bg-indigo-600 text-white py-2.5 rounded-lg hover:bg-indigo-700 font-medium transition-colors"
               >
-                บันทึกข้อมูล
+                {isEditMode ? 'บันทึกการแก้ไข' : 'บันทึกข้อมูล'}
               </button>
             </form>
           </div>
@@ -1197,7 +1316,7 @@ export default function LeavesPage() {
                   <option value="">ทั้งหมด</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.name}>
-                      {user.name}
+                      {user.prefix}{user.name}
                     </option>
                   ))}
                 </select>
@@ -1229,9 +1348,41 @@ export default function LeavesPage() {
                 </div>
               </div>
 
+              {/* เลือกคอลัมน์ที่จะ export */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  เลือกข้อมูลที่ต้องการ
+                </label>
+                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg">
+                  {[
+                    { key: 'id', label: 'รหัส' },
+                    { key: 'name', label: 'ชื่อพนักงาน' },
+                    { key: 'department', label: 'แผนก' },
+                    { key: 'type', label: 'ประเภทการลา' },
+                    { key: 'startDate', label: 'วันที่เริ่ม' },
+                    { key: 'endDate', label: 'วันที่สิ้นสุด' },
+                    { key: 'days', label: 'จำนวนวัน' },
+                    { key: 'reason', label: 'เหตุผล' },
+                    { key: 'status', label: 'สถานะ' },
+                    { key: 'approvedBy', label: 'ผู้อนุมัติ' },
+                    { key: 'createdAt', label: 'วันที่บันทึก' },
+                  ].map(({ key, label }) => (
+                    <label key={key} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1.5 rounded">
+                      <input
+                        type="checkbox"
+                        checked={exportColumns[key as keyof typeof exportColumns]}
+                        onChange={(e) => setExportColumns({ ...exportColumns, [key]: e.target.checked })}
+                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-slate-600">{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               <div className="text-sm text-slate-500 bg-slate-50 p-3 rounded-lg">
                 <p>ไฟล์จะถูกดาวน์โหลดในรูปแบบ CSV</p>
-                <p className="text-xs mt-1">คอลัมน์: รหัส, ชื่อ, แผนก, ประเภท, วันที่, จำนวนวัน, เหตุผล, สถานะ</p>
+                <p className="text-xs mt-1">จำนวนคอลัมน์ที่เลือก: {Object.values(exportColumns).filter(Boolean).length} คอลัมน์</p>
               </div>
 
               <button

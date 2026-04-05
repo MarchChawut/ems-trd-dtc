@@ -109,7 +109,7 @@ export const createTaskSchema = z.object({
  * Schema สำหรับตรวจสอบการสร้างรายการลา
  */
 export const createLeaveSchema = z.object({
-  type: z.enum(['SICK', 'PERSONAL', 'VACATION', 'MATERNITY', 'ORDINATION', 'OTHER']),
+  type: z.enum(['SICK', 'PERSONAL', 'VACATION', 'MATERNITY', 'ORDINATION', 'EARLY_LEAVE', 'OTHER']),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'รูปแบบวันที่ต้องเป็น YYYY-MM-DD'),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'รูปแบบวันที่ต้องเป็น YYYY-MM-DD'),
   reason: z
@@ -118,6 +118,7 @@ export const createLeaveSchema = z.object({
     .max(500, 'เหตุผลต้องไม่เกิน 500 ตัวอักษร'),
   isHalfDay: z.boolean().optional(),
   hours: z.number().min(0).max(24).optional(),
+  contactAddress: z.string().max(500, 'สถานที่พักต้องไม่เกิน 500 ตัวอักษร').optional(),
 }).refine((data) => {
   const start = new Date(data.startDate);
   const end = new Date(data.endDate);

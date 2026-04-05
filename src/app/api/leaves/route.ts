@@ -70,9 +70,14 @@ export async function GET(request: NextRequest) {
         user: {
           select: {
             id: true,
+            prefix: true,
             name: true,
             avatar: true,
             department: true,
+            division: true,
+            position: true,
+            phone: true,
+            address: true,
           },
         },
       },
@@ -149,7 +154,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { type, startDate, endDate, reason, isHalfDay, hours } = validationResult.data;
+    const { type, startDate, endDate, reason, isHalfDay, hours, contactAddress } = validationResult.data;
 
     // กำหนด userId สำหรับการลา
     let targetUserId = currentUser.id;
@@ -234,15 +239,20 @@ export async function POST(request: NextRequest) {
         isHalfDay: isHalfDay || false,
         hours: hours || null,
         totalDays,
+        contactAddress: contactAddress ? sanitizeInput(contactAddress) : null,
       },
       include: {
         user: {
           select: {
             id: true,
+            prefix: true,
             name: true,
             avatar: true,
             department: true,
             division: true,
+            position: true,
+            phone: true,
+            address: true,
           },
         },
       },

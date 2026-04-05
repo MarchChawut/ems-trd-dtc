@@ -2,7 +2,8 @@
  * ==================================================
  * API Route: GET /api/dashboard/leave-stats
  * ==================================================
- * API สำหรับดึงข้อมูลสถิติการลาแยกตามผู้ใช้/ประเภท/เดือน ในปีงบประมาณ
+ * API สำหรับดึงข้อมูลสถิติการลาแยกตามผู้ใช้/ประเภท/เดือน
+ * รองรับการกรองด้วย ปีงบประมาณ, ช่วงเวลา, ประเภทการลา
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,15 +12,34 @@ import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
 /**
- * คำนวณช่วงปีงบประมาณ (1 ต.ค. - 30 ก.ย.)
+ * แปลงปี ค.ศ. เป็น พ.ศ. อย่างปลอดภัย (ป้องกันบวกซ้ำ)
  */
-function getFiscalYearRange(date: Date): { start: Date; end: Date } {
-  const year = date.getFullYear();
+function toBuddhistYear(year: number): number {
+  // ถ้าปีมากกว่า 2500 แสดงว่าเป็น พ.ศ. อยู่แล้ว ไม่ต้องบวก
+  return year > 2500 ? year : year + 543;
+}
+
+/**
+ * ดึงปี ค.ศ. จาก Date อย่างปลอดภัย
+ */
+function safeGetGregorianYear(date: Date): number {
+  const y = date.getFullYear();
+  // ถ้า > 2500 แสดงว่าเป็น พ.ศ. ต้องลบ 543 กลับ
+  return y > 2500 ? y - 543 : y;
+}
+
+/**
+ * คำนวณช่วงปีงบประมาณ (1 ต.ค. - 30 ก.ย.)
+ * รับปี ค.ศ. ที่เป็นจุดเริ่มต้น (เช่น 2025 = ปีงบฯ ต.ค. 2025 - ก.ย. 2026)
+ */
+function getFiscalYearRange(date: Date): { start: Date; end: Date; fiscalStartYear: number } {
+  const year = safeGetGregorianYear(date);
   const month = date.getMonth();
   const fiscalStartYear = month >= 9 ? year : year - 1;
   return {
     start: new Date(fiscalStartYear, 9, 1),
     end: new Date(fiscalStartYear + 1, 8, 30, 23, 59, 59),
+    fiscalStartYear,
   };
 }
 
@@ -34,7 +54,7 @@ function calculateBusinessDays(
   holidays: Date[],
 ): number {
   if (hours && hours > 0) {
-    return hours <= 3 ? 0.5 : 1; // ลา ≤ 3 ชม. = ครึ่งวัน, > 3 ชม. = 1 วัน
+    return hours <= 3 ? 0.5 : 1;
   }
   if (isHalfDay) return 0.5;
 
@@ -57,6 +77,15 @@ function calculateBusinessDays(
   return count;
 }
 
+/**
+ * GET /api/dashboard/leave-stats
+ *
+ * Query Parameters:
+ * - fiscalYear: ปี ค.ศ. ที่เริ่มต้นปีงบประมาณ (เช่น 2025 = ปีงบฯ 2568-2569)
+ * - type: ประเภทการลา (SICK, PERSONAL, VACATION, ...)
+ * - startDate: วันเริ่มต้น custom (YYYY-MM-DD)
+ * - endDate: วันสิ้นสุด custom (YYYY-MM-DD)
+ */
 export async function GET(request: NextRequest) {
   try {
     const authResult = await requireAuth(request);
@@ -67,21 +96,76 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const fiscalRange = getFiscalYearRange(new Date());
+    // อ่าน query params
+    const { searchParams } = new URL(request.url);
+    const fiscalYearParam = searchParams.get('fiscalYear'); // ปี ค.ศ.
+    const typeParam = searchParams.get('type');
+    const customStartDate = searchParams.get('startDate');
+    const customEndDate = searchParams.get('endDate');
 
-    // ดึงการลาทั้งหมดในปีงบประมาณ (APPROVED + PENDING)
-    const leaves = await prisma.leave.findMany({
-      where: {
-        startDate: {
-          gte: fiscalRange.start,
-          lte: fiscalRange.end,
+    // คำนวณช่วงปีงบประมาณ
+    let fiscalRange: { start: Date; end: Date; fiscalStartYear: number };
+    if (fiscalYearParam) {
+      let fy = parseInt(fiscalYearParam);
+      // ถ้าส่งมาเป็น พ.ศ. ให้แปลงกลับ
+      if (fy > 2500) fy = fy - 543;
+      fiscalRange = {
+        start: new Date(fy, 9, 1),
+        end: new Date(fy + 1, 8, 30, 23, 59, 59),
+        fiscalStartYear: fy,
+      };
+    } else {
+      fiscalRange = getFiscalYearRange(new Date());
+    }
+
+    // กำหนดช่วงวันที่สำหรับ query
+    let queryStart = fiscalRange.start;
+    let queryEnd = fiscalRange.end;
+
+    if (customStartDate) {
+      queryStart = new Date(customStartDate);
+    }
+    if (customEndDate) {
+      queryEnd = new Date(customEndDate + 'T23:59:59');
+    }
+
+    // สร้าง where clause - รองรับทั้งวันที่ ค.ศ. และ พ.ศ. ที่อาจหลุดเข้าไปใน DB
+    const beQueryStart = new Date(queryStart.getFullYear() + 543, queryStart.getMonth(), queryStart.getDate());
+    const beQueryEnd = new Date(queryEnd.getFullYear() + 543, queryEnd.getMonth(), queryEnd.getDate(), 23, 59, 59);
+
+    const where: any = {
+      OR: [
+        // ช่วงปี ค.ศ. ปกติ (เช่น 2025-10-01 ถึง 2026-09-30)
+        {
+          startDate: {
+            gte: queryStart,
+            lte: queryEnd,
+          },
         },
-        status: { in: ['APPROVED', 'PENDING'] },
-      },
+        // ช่วงปี พ.ศ. ที่อาจถูกบันทึกผิด (เช่น 2568-10-01 ถึง 2569-09-30)
+        {
+          startDate: {
+            gte: beQueryStart,
+            lte: beQueryEnd,
+          },
+        },
+      ],
+      status: { in: ['APPROVED', 'PENDING'] },
+    };
+
+    // กรองประเภทการลา
+    if (typeParam && typeParam !== 'ALL') {
+      where.type = typeParam;
+    }
+
+    // ดึงการลาทั้งหมด
+    const leaves = await prisma.leave.findMany({
+      where,
       include: {
         user: {
           select: {
             id: true,
+            prefix: true,
             name: true,
             avatar: true,
             department: true,
@@ -91,15 +175,28 @@ export async function GET(request: NextRequest) {
       orderBy: { startDate: 'asc' },
     });
 
-    // ดึงวันหยุดหน่วยงานในปีงบประมาณ
+    // ดึงวันหยุดหน่วยงาน (รองรับทั้ง ค.ศ. และ พ.ศ.)
     let holidays: Date[] = [];
     try {
+      const beFiscalStart = new Date(fiscalRange.start.getFullYear() + 543, fiscalRange.start.getMonth(), fiscalRange.start.getDate());
+      const beFiscalEnd = new Date(fiscalRange.end.getFullYear() + 543, fiscalRange.end.getMonth(), fiscalRange.end.getDate(), 23, 59, 59);
+
       const orgHolidays = await (prisma as any).holiday.findMany({
         where: {
-          date: {
-            gte: fiscalRange.start,
-            lte: fiscalRange.end,
-          },
+          OR: [
+            {
+              date: {
+                gte: fiscalRange.start,
+                lte: fiscalRange.end,
+              },
+            },
+            {
+              date: {
+                gte: beFiscalStart,
+                lte: beFiscalEnd,
+              },
+            },
+          ],
         },
       });
       holidays = orgHolidays.map((h: any) => h.date);
@@ -114,12 +211,12 @@ export async function GET(request: NextRequest) {
     ];
 
     // สร้าง fiscal year months (ต.ค. -> ก.ย.)
-    const fiscalStartYear = fiscalRange.start.getFullYear();
+    const { fiscalStartYear } = fiscalRange;
     const fiscalMonths: { month: number; year: number; label: string }[] = [];
     for (let i = 0; i < 12; i++) {
       const m = (9 + i) % 12; // 9=ต.ค., 10=พ.ย., ..., 8=ก.ย.
       const y = m >= 9 ? fiscalStartYear : fiscalStartYear + 1;
-      const buddhistYear = (y + 543).toString().slice(-2);
+      const buddhistYear = toBuddhistYear(y).toString().slice(-2);
       fiscalMonths.push({
         month: m,
         year: y,
@@ -141,6 +238,9 @@ export async function GET(request: NextRequest) {
           startDate: string;
           endDate: string;
           days: number;
+          isHalfDay: boolean;
+          hours: number | null;
+          status: string;
           month: number;
           year: number;
         }[];
@@ -151,7 +251,7 @@ export async function GET(request: NextRequest) {
       if (!userMap.has(leave.userId)) {
         userMap.set(leave.userId, {
           userId: leave.userId,
-          userName: leave.user.name,
+          userName: `${(leave.user as any).prefix || ''}${leave.user.name}`,
           avatar: leave.user.avatar,
           department: leave.user.department,
           leaves: [],
@@ -167,7 +267,7 @@ export async function GET(request: NextRequest) {
       );
 
       const startMonth = new Date(leave.startDate).getMonth();
-      const startYear = new Date(leave.startDate).getFullYear();
+      const startYear = safeGetGregorianYear(new Date(leave.startDate));
 
       userMap.get(leave.userId)!.leaves.push({
         id: leave.id,
@@ -175,12 +275,15 @@ export async function GET(request: NextRequest) {
         startDate: leave.startDate.toISOString(),
         endDate: leave.endDate.toISOString(),
         days,
+        isHalfDay: leave.isHalfDay,
+        hours: leave.hours,
+        status: leave.status,
         month: startMonth,
         year: startYear,
       });
     }
 
-    // สร้าง chart data: แต่ละเดือนมีข้อมูลแยกตามผู้ใช้
+    // สร้าง chart data
     const chartData = fiscalMonths.map((fm) => {
       const monthData: Record<string, any> = {
         month: fm.label,
@@ -190,10 +293,10 @@ export async function GET(request: NextRequest) {
 
       Array.from(userMap.values()).forEach((userData) => {
         const userMonthLeaves = userData.leaves.filter(
-          (l: { month: number; year: number }) => l.month === fm.month && l.year === fm.year,
+          (l) => l.month === fm.month && l.year === fm.year,
         );
         if (userMonthLeaves.length > 0) {
-          const totalDays = userMonthLeaves.reduce((sum: number, l: { days: number }) => sum + l.days, 0);
+          const totalDays = userMonthLeaves.reduce((sum, l) => sum + l.days, 0);
           monthData[`user_${userData.userId}`] = Math.round(totalDays * 100) / 100;
         }
       });
@@ -220,10 +323,27 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // สร้าง fiscal year label (พ.ศ.)
+    const fyStart = toBuddhistYear(fiscalStartYear);
+    const fyEnd = toBuddhistYear(fiscalStartYear + 1);
+
+    // สร้างรายการปีงบประมาณย้อนหลัง 5 ปี
+    const availableFiscalYears: { label: string; value: number }[] = [];
+    const currentFiscalStartYear = getFiscalYearRange(new Date()).fiscalStartYear;
+    for (let i = 0; i < 5; i++) {
+      const fy = currentFiscalStartYear - i;
+      availableFiscalYears.push({
+        label: `${toBuddhistYear(fy)} - ${toBuddhistYear(fy + 1)}`,
+        value: fy,
+      });
+    }
+
     return NextResponse.json({
       success: true,
       data: {
-        fiscalYear: `${(fiscalStartYear + 543).toString()} - ${((fiscalStartYear + 1) + 543).toString()}`,
+        fiscalYear: `${fyStart} - ${fyEnd}`,
+        fiscalStartYear,
+        availableFiscalYears,
         fiscalRange: {
           start: fiscalRange.start.toISOString(),
           end: fiscalRange.end.toISOString(),
@@ -237,20 +357,7 @@ export async function GET(request: NextRequest) {
           department: u.department,
         })),
         userSummaries,
-        leaves: leaves.map((l) => ({
-          id: l.id,
-          userId: l.userId,
-          userName: l.user.name,
-          type: l.type,
-          startDate: l.startDate.toISOString(),
-          endDate: l.endDate.toISOString(),
-          days: calculateBusinessDays(l.startDate, l.endDate, l.isHalfDay, l.hours, holidays),
-          isHalfDay: l.isHalfDay,
-          hours: l.hours,
-          status: l.status,
-          month: new Date(l.startDate).getMonth(),
-          year: new Date(l.startDate).getFullYear(),
-        })),
+        leaves: Array.from(userMap.values()).flatMap((u) => u.leaves),
       },
     });
   } catch (error) {

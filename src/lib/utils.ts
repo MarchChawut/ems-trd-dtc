@@ -23,6 +23,35 @@ export function cn(...inputs: ClassValue[]): string {
 }
 
 /**
+ * ฟังก์ชันสำหรับแปลงปี ค.ศ. เป็น พ.ศ. อย่างปลอดภัย (ป้องกันบวกซ้ำ)
+ * @param year - ปีที่ต้องการแปลง
+ * @returns {number} ปี พ.ศ.
+ *
+ * ตัวอย่างการใช้งาน:
+ * toBuddhistYear(2025) // 2568
+ * toBuddhistYear(2568) // 2568 (ไม่บวกซ้ำ)
+ */
+export function toBuddhistYear(year: number): number {
+  // ถ้าปีมากกว่า 2500 แสดงว่าเป็น พ.ศ. อยู่แล้ว ไม่ต้องบวก
+  return year > 2500 ? year : year + 543;
+}
+
+/**
+ * ดึงปี ค.ศ. จาก Date อย่างปลอดภัย (ถ้าเป็น พ.ศ. ให้แปลงกลับ)
+ * @param date - วันที่ที่ต้องการดึงปี
+ * @returns {number} ปี ค.ศ.
+ *
+ * ตัวอย่างการใช้งาน:
+ * safeGetGregorianYear(new Date('2568-01-15')) // 2025
+ * safeGetGregorianYear(new Date('2025-01-15')) // 2025
+ */
+export function safeGetGregorianYear(date: Date): number {
+  const y = date.getFullYear();
+  // ถ้า > 2500 แสดงว่าเป็น พ.ศ. ต้องลบ 543 กลับ
+  return y > 2500 ? y - 543 : y;
+}
+
+/**
  * ฟังก์ชันสำหรับจัดรูปแบบวันที่
  * @param date - วันที่ที่ต้องการจัดรูปแบบ
  * @param options - ตัวเลือกการจัดรูปแบบ
@@ -204,4 +233,60 @@ export function isBrowser(): boolean {
  */
 export function isServer(): boolean {
   return typeof window === 'undefined';
+}
+
+/**
+ * รายการ prefix พลเรือน (Civilian)
+ * - prefix กลุ่มนี้จะไม่ปรากฏหลังคำว่า "ลงชื่อ" แต่จะติดไปกับชื่อในวงเล็บเท่านั้น
+ */
+export const CIVILIAN_PREFIXES: readonly string[] = [
+  'นาย',
+  'นาง',
+  'นางสาว',
+  'น.ส.',
+  'เด็กชาย',
+  'เด็กหญิง',
+] as const;
+
+/**
+ * ตรวจสอบว่า prefix นี้เป็นยศทหาร/ตำรวจ (หรือยศที่ไม่ใช่พลเรือน) หรือไม่
+ * @param prefix - คำนำหน้าชื่อ
+ * @returns {boolean} true หากเป็นยศทหาร/ตำรวจ/ราชทินนาม (non-civilian)
+ */
+export function isMilitaryPrefix(prefix?: string | null): boolean {
+  if (!prefix) return false;
+  const trimmed = prefix.trim();
+  if (!trimmed) return false;
+  return !CIVILIAN_PREFIXES.includes(trimmed);
+}
+
+/**
+ * จัดรูปแบบชื่อสำหรับบล็อกลายเซ็นตามกฎ:
+ * - พลเรือน (นาย/นาง/นางสาว/น.ส./เด็กชาย/เด็กหญิง):
+ *   prefix ติดกับ name ในวงเล็บ, บรรทัด "ลงชื่อ" ไม่มี prefix
+ * - ยศทหาร/ตำรวจ (ร.ท., พ.อ., ฯลฯ):
+ *   prefix ตามหลังคำว่า "ลงชื่อ" เท่านั้น ในวงเล็บแสดงเฉพาะชื่อ (ไม่ซ้ำ prefix)
+ *
+ * @param prefix - คำนำหน้าชื่อ (เช่น "นาย", "ร.ท.", "พ.อ.")
+ * @param name - ชื่อ-นามสกุล
+ * @returns { linePrefix, parenName } สำหรับใช้ในบล็อกลายเซ็น
+ *
+ * ตัวอย่าง:
+ * formatSignatureName('ร.ท.', 'โกเศศ ศรีอุทธา')
+ *   // { linePrefix: 'ร.ท.', parenName: 'โกเศศ ศรีอุทธา' }
+ * formatSignatureName('นาย', 'สมชาย ใจดี')
+ *   // { linePrefix: '', parenName: 'นายสมชาย ใจดี' }
+ */
+export function formatSignatureName(
+  prefix?: string | null,
+  name?: string | null
+): { linePrefix: string; parenName: string } {
+  const safePrefix = (prefix ?? '').trim();
+  const safeName = (name ?? '').trim();
+  const military = isMilitaryPrefix(safePrefix);
+
+  return {
+    linePrefix: military ? safePrefix : '',
+    parenName: military ? safeName : `${safePrefix}${safeName}`,
+  };
 }

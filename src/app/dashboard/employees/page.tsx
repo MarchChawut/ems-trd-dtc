@@ -98,6 +98,7 @@ export default function EmployeesPage() {
   
   // State สำหรับข้อผิดพลาด
   const [error, setError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
   
   // State สำหรับเปิด/ปิด Modal สร้างพนักงาน
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -144,6 +145,8 @@ export default function EmployeesPage() {
     position: '',
     positionSecond: '',
     positionLevel: '',
+    phone: '',
+    address: '',
     isActive: true,
   });
   const [isUploading, setIsUploading] = useState(false);
@@ -365,8 +368,11 @@ export default function EmployeesPage() {
       position: user.position || '',
       positionSecond: user.positionSecond || '',
       positionLevel: user.positionLevel ? String(user.positionLevel) : '',
+      phone: (user as any).phone || '',
+      address: (user as any).address || '',
       isActive: user.isActive,
     });
+    setEditError(null);
     setIsEditModalOpen(true);
   };
 
@@ -375,6 +381,7 @@ export default function EmployeesPage() {
    */
   const handleSaveEdit = async () => {
     if (!editingUser || !editForm.name.trim()) return;
+    setEditError(null);
 
     try {
       const response = await fetch(`/api/users/${editingUser.id}`, {
@@ -390,19 +397,26 @@ export default function EmployeesPage() {
           position: editForm.position || null,
           positionSecond: editForm.positionSecond || null,
           positionLevel: editForm.positionLevel ? parseInt(editForm.positionLevel) : null,
+          phone: editForm.phone || null,
+          address: editForm.address || null,
           isActive: editForm.isActive,
         }),
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'ไม่สามารถอัปเดตได้');
+      if (!response.ok) {
+        setEditError(data.message || data.details ? JSON.stringify(data.details) : 'ไม่สามารถอัปเดตได้');
+        return;
+      }
 
       if (data.success) {
         setUsers(users.map(u => u.id === editingUser.id ? data.data : u));
         setEditingUser(data.data);
+        setIsEditModalOpen(false);
+        setEditingUser(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+      setEditError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ');
     }
   };
 
@@ -1274,7 +1288,39 @@ export default function EmployeesPage() {
                   </div>
                 )}
               </div>
+
+              {/* เบอร์โทรศัพท์ */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">เบอร์โทรศัพท์</label>
+                <input
+                  type="tel"
+                  placeholder="เช่น 081-234-5678"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                />
+              </div>
+
+              {/* ที่อยู่ */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">ที่อยู่</label>
+                <textarea
+                  rows={2}
+                  placeholder="ที่อยู่สำหรับติดต่อ"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  value={editForm.address}
+                  onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                />
+              </div>
             </div>
+
+            {/* Error ในการบันทึก */}
+            {editError && (
+              <div className="mx-6 mb-2 p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+                <p className="text-sm text-rose-600">{editError}</p>
+              </div>
+            )}
 
             {/* Footer */}
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">

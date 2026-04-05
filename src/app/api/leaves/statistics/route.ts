@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
       VACATION: { count: 0, days: 0 },
       MATERNITY: { count: 0, days: 0 },
       ORDINATION: { count: 0, days: 0 },
+      EARLY_LEAVE: { count: 0, days: 0 },
       OTHER: { count: 0, days: 0 },
     };
 

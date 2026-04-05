@@ -7,8 +7,158 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { createLeaveSchema, sanitizeInput } from '@/lib/security';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+
+/**
+ * PUT /api/leaves/[id]
+ * แก้ไขรายละเอียดการลา
+ *
+ * Request Body:
+ * {
+ *   type?: LeaveType;
+ *   startDate?: string;
+ *   endDate?: string;
+ *   reason?: string;
+ *   isHalfDay?: boolean;
+ *   hours?: number;
+ * }
+ */
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const authResult = await requireAuth(request);
+    if (!authResult.success) {
+      return NextResponse.json(
+        { success: false, error: authResult.error, message: authResult.message },
+        { status: authResult.status }
+      );
+    }
+
+    const currentUser = authResult.user!;
+    const { id } = await params;
+    const leaveId = parseInt(id);
+
+    if (isNaN(leaveId)) {
+      return NextResponse.json(
+        { success: false, error: 'INVALID_ID', message: 'รหัสการลาไม่ถูกต้อง' },
+        { status: 400 }
+      );
+    }
+
+    const existingLeave = await prisma.leave.findUnique({
+      where: { id: leaveId },
+    });
+
+    if (!existingLeave) {
+      return NextResponse.json(
+        { success: false, error: 'LEAVE_NOT_FOUND', message: 'ไม่พบรายการลา' },
+        { status: 404 }
+      );
+    }
+
+    // ตรวจสอบสิทธิ์ (เจ้าของรายการหรือ MANAGER ขึ้นไป)
+    if (existingLeave.userId !== currentUser.id && !isManagerOrAbove(currentUser.role)) {
+      return NextResponse.json(
+        { success: false, error: 'FORBIDDEN', message: 'คุณไม่มีสิทธิ์แก้ไขรายการลานี้' },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+
+    // Validate ข้อมูล
+    const validationResult = createLeaveSchema.safeParse(body);
+    if (!validationResult.success) {
+      const errors = validationResult.error.flatten().fieldErrors;
+      return NextResponse.json(
+        { success: false, error: 'VALIDATION_ERROR', message: 'ข้อมูลไม่ถูกต้อง', details: errors },
+        { status: 400 }
+      );
+    }
+
+    const { type, startDate, endDate, reason, isHalfDay, hours, contactAddress } = validationResult.data;
+
+    // คำนวณจำนวนวันลา
+    let totalDays = 0;
+    if (hours && hours > 0) {
+      totalDays = hours <= 3 ? 0.5 : 1;
+    } else if (isHalfDay) {
+      totalDays = 0.5;
+    } else {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      let holidays: Date[] = [];
+      try {
+        const holidayRecords = await prisma.holiday.findMany({
+          where: { isActive: true, date: { gte: start, lte: end } },
+          select: { date: true },
+        });
+        holidays = holidayRecords.map((h: { date: Date }) => h.date);
+      } catch {}
+
+      const current = new Date(start);
+      while (current <= end) {
+        const dayOfWeek = current.getDay();
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+          const isHoliday = holidays.some(h =>
+            h.getFullYear() === current.getFullYear() &&
+            h.getMonth() === current.getMonth() &&
+            h.getDate() === current.getDate()
+          );
+          if (!isHoliday) totalDays++;
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    }
+
+    const leave = await prisma.leave.update({
+      where: { id: leaveId },
+      data: {
+        type,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        reason: sanitizeInput(reason),
+        isHalfDay: isHalfDay || false,
+        hours: hours || null,
+        totalDays,
+        contactAddress: contactAddress ? sanitizeInput(contactAddress) : null,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            prefix: true,
+            name: true,
+            avatar: true,
+            department: true,
+            division: true,
+            position: true,
+            phone: true,
+            address: true,
+          },
+        },
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: leave,
+      message: 'แก้ไขรายการลาสำเร็จ',
+    });
+
+  } catch (error) {
+    logger.error('Update leave details error', { error });
+    return NextResponse.json(
+      { success: false, error: 'INTERNAL_ERROR', message: 'เกิดข้อผิดพลาดภายในระบบ' },
+      { status: 500 }
+    );
+  }
+}
 
 /**
  * PATCH /api/leaves/[id]
@@ -124,9 +274,14 @@ export async function PATCH(
         user: {
           select: {
             id: true,
+            prefix: true,
             name: true,
             avatar: true,
             department: true,
+            division: true,
+            position: true,
+            phone: true,
+            address: true,
           },
         },
       },

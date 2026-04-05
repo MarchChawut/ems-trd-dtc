@@ -28,6 +28,8 @@ model User {
   position   String? @db.VarChar(100) // ตำแหน่ง เช่น จนท.ฝ่ายธุรการ, ผู้อำนวยการกอง
   positionSecond String? @db.VarChar(100) // ตำแหน่งรอง เช่น ลูกจ้างชั่วคราวรายเดือน, เจ้าหน้าที่งานในพระองค์
   positionLevel Int?    // ระดับ (สำหรับเจ้าหน้าที่งานในพระองค์ 1-11)
+  phone     String?  @db.VarChar(20) // เบอร์โทรศัพท์
+  address   String?  @db.Text // ที่อยู่
   avatar    String?  @db.VarChar(10) // ตัวย่อชื่อสำหรับแสดง avatar
   profileImage String? @db.VarChar(500) // URL รูปโปรไฟล์
   isActive  Boolean  @default(true)
@@ -146,9 +148,10 @@ model Leave {
   approvedAt  DateTime?   
   
   // ข้อมูลเพิ่มเติมสำหรับฟอร์ม
-  isHalfDay   Boolean     @default(false) // ลาครึ่งวันหรือไม่
-  hours       Float?      // จำนวนชั่วโมงที่ลา (ถ้าลาเป็นชั่วโมง)
-  totalDays   Float       @default(0) // จำนวนวันลารวม (คำนวณจากกฎ)
+  isHalfDay      Boolean     @default(false) // ลาครึ่งวันหรือไม่
+  hours          Float?      // จำนวนชั่วโมงที่ลา (ถ้าลาเป็นชั่วโมง)
+  totalDays      Float       @default(0) // จำนวนวันลารวม (คำนวณจากกฎ)
+  contactAddress String?     @db.Text // สถานที่พักขณะลา (ในระหว่างลาจะติดต่อข้าพเจ้าได้ที่)
   
   // ความสัมพันธ์
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -288,6 +291,7 @@ enum LeaveType {
   VACATION    // ลาพักร้อน
   MATERNITY   // ลาคลอดบุตร
   ORDINATION  // ลาบวช
+  EARLY_LEAVE // ออกก่อนเวลา
   OTHER       // อื่นๆ
 }
 

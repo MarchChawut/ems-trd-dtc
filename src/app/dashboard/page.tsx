@@ -7,7 +7,7 @@
 
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Users,
@@ -16,6 +16,7 @@ import {
   CheckCircle,
   Loader2,
   Filter,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DashboardStats } from '@/types';
@@ -52,6 +53,7 @@ const leaveTypeConfig: Record<string, { label: string; color: string; bgClass: s
   MATERNITY: { label: 'ลาคลอดบุตร', color: '#ec4899', bgClass: 'bg-pink-500' },
   VACATION: { label: 'ลาพักร้อน', color: '#10b981', bgClass: 'bg-emerald-500' },
   ORDINATION: { label: 'ลาบวช', color: '#8b5cf6', bgClass: 'bg-violet-500' },
+  EARLY_LEAVE: { label: 'ออกก่อนเวลา', color: '#ea580c', bgClass: 'bg-orange-600' },
   OTHER: { label: 'ลาอื่นๆ', color: '#64748b', bgClass: 'bg-slate-500' },
 };
 
@@ -97,8 +99,16 @@ interface UserSummary {
   totalDays: number;
 }
 
+interface FiscalYearOption {
+  label: string;
+  value: number;
+}
+
 interface LeaveStatsData {
   fiscalYear: string;
+  fiscalStartYear: number;
+  availableFiscalYears: FiscalYearOption[];
+  fiscalRange: { start: string; end: string };
   fiscalMonths: string[];
   chartData: Record<string, any>[];
   users: UserInfo[];
@@ -117,13 +127,53 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>(defaultStats);
   const [leaveStats, setLeaveStats] = useState<LeaveStatsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // ตัวกรอง
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
+  const [selectedFiscalYear, setSelectedFiscalYear] = useState<string>(''); // '' = ปีปัจจุบัน
+  const [selectedType, setSelectedType] = useState<string>('ALL');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
 
   /**
-   * ดึงข้อมูลสถิติจาก API
+   * ดึงข้อมูลสถิติการลาจาก API (รองรับ filters)
+   */
+  const fetchLeaveStats = useCallback(async (options?: {
+    fiscalYear?: string;
+    type?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    try {
+      const params = new URLSearchParams();
+      // ใช้ ?? เพื่อให้ค่า '' (empty string) สามารถ override ได้ (หมายถึง reset)
+      const fy = options?.fiscalYear !== undefined ? options.fiscalYear : selectedFiscalYear;
+      const tp = options?.type !== undefined ? options.type : selectedType;
+      const sd = options?.startDate !== undefined ? options.startDate : customStartDate;
+      const ed = options?.endDate !== undefined ? options.endDate : customEndDate;
+
+      if (fy) params.set('fiscalYear', fy);
+      if (tp && tp !== 'ALL') params.set('type', tp);
+      if (sd) params.set('startDate', sd);
+      if (ed) params.set('endDate', ed);
+
+      const qs = params.toString();
+      const url = `/api/dashboard/leave-stats${qs ? `?${qs}` : ''}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.success) {
+        setLeaveStats(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch leave stats', err);
+    }
+  }, [selectedFiscalYear, selectedType, customStartDate, customEndDate]);
+
+  /**
+   * ดึงข้อมูลสถิติจาก API (ครั้งแรก)
    */
   useEffect(() => {
     const fetchData = async () => {
@@ -160,6 +210,54 @@ export default function DashboardPage() {
 
     fetchData();
   }, [router]);
+
+  /**
+   * จัดการเมื่อเปลี่ยนปีงบประมาณ
+   */
+  const handleFiscalYearChange = async (value: string) => {
+    setSelectedFiscalYear(value);
+    setSelectedMonth('ALL');
+    setCustomStartDate('');
+    setCustomEndDate('');
+    setIsRefreshing(true);
+    await fetchLeaveStats({ fiscalYear: value, type: selectedType, startDate: '', endDate: '' });
+    setIsRefreshing(false);
+  };
+
+  /**
+   * จัดการเมื่อเปลี่ยนประเภทการลา
+   */
+  const handleTypeChange = async (value: string) => {
+    setSelectedType(value);
+    setIsRefreshing(true);
+    await fetchLeaveStats({ type: value });
+    setIsRefreshing(false);
+  };
+
+  /**
+   * จัดการเมื่อกดค้นหาช่วงวันที่
+   */
+  const handleDateRangeSearch = async () => {
+    if (!customStartDate || !customEndDate) return;
+    setSelectedMonth('ALL');
+    setIsRefreshing(true);
+    await fetchLeaveStats({ startDate: customStartDate, endDate: customEndDate });
+    setIsRefreshing(false);
+  };
+
+  /**
+   * รีเซ็ตตัวกรองทั้งหมด
+   */
+  const handleResetFilters = async () => {
+    setSelectedFiscalYear('');
+    setSelectedType('ALL');
+    setSelectedMonth('ALL');
+    setCustomStartDate('');
+    setCustomEndDate('');
+    setIsRefreshing(true);
+    await fetchLeaveStats({ fiscalYear: '', type: 'ALL', startDate: '', endDate: '' });
+    setIsRefreshing(false);
+  };
 
   /**
    * กรองข้อมูลการลาตามเดือน
@@ -231,9 +329,12 @@ export default function DashboardPage() {
   }, [leaveStats]);
 
   // ประเภทลาที่มีข้อมูลจริง (สำหรับแสดงแท่งในกราฟ)
-  const activeLeaveTypes = Object.keys(leaveTypeConfig).filter((type) =>
-    leaveStats?.leaves.some((l) => l.type === type),
-  );
+  const activeLeaveTypes = useMemo(() => {
+    if (!leaveStats) return [];
+    return Object.keys(leaveTypeConfig).filter((type) =>
+      leaveStats.leaves.some((l) => l.type === type),
+    );
+  }, [leaveStats]);
 
   // แสดง loading
   if (isLoading) {
@@ -335,8 +436,8 @@ export default function DashboardPage() {
       {/* กราฟสถิติการลา — แท่งแยกตามประเภทลาต่อคน (grouped) */}
       {leaveStats && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          {/* Header + Filters */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
             <div>
               <h2 className="text-lg font-bold text-slate-800">
                 สถิติการลาในปีงบประมาณ {leaveStats.fiscalYear}
@@ -345,36 +446,110 @@ export default function DashboardPage() {
                 แสดงจำนวนวันลา (วันทำการ) แยกรายบุคคล — แสดงเฉพาะคนที่มีการลา
               </p>
             </div>
+            {isRefreshing && (
+              <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+            )}
+          </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              {/* ตัวกรองเดือน */}
-              <div className="flex items-center gap-1.5">
-                <Filter size={14} className="text-slate-400" />
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="ALL">ทั้งปีงบประมาณ</option>
-                  {fiscalMonthOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
+          {/* Filters */}
+          <div className="flex flex-wrap items-end gap-3 mb-6 p-4 bg-slate-50 rounded-lg border border-slate-100">
+            <Filter size={16} className="text-slate-400 mb-2" />
 
-              {/* Legend */}
-              <div className="flex flex-wrap items-center gap-3">
-                {activeLeaveTypes.map((type) => (
-                  <div key={type} className="flex items-center gap-1.5 text-xs">
-                    <span
-                      className="w-3 h-3 rounded-sm"
-                      style={{ backgroundColor: leaveTypeConfig[type].color }}
-                    />
-                    <span className="text-slate-600">{leaveTypeConfig[type].label}</span>
-                  </div>
+            {/* ปีงบประมาณ */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500 font-medium">ปีงบประมาณ</label>
+              <select
+                value={selectedFiscalYear}
+                onChange={(e) => handleFiscalYearChange(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">ปีปัจจุบัน</option>
+                {leaveStats.availableFiscalYears?.map((fy) => (
+                  <option key={fy.value} value={fy.value.toString()}>
+                    {fy.label}
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
+
+            {/* ประเภทการลา */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500 font-medium">ประเภทการลา</label>
+              <select
+                value={selectedType}
+                onChange={(e) => handleTypeChange(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="ALL">ทั้งหมด</option>
+                {Object.entries(leaveTypeConfig).map(([type, cfg]) => (
+                  <option key={type} value={type}>{cfg.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* เดือน */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500 font-medium">เดือน</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="ALL">ทั้งปีงบประมาณ</option>
+                {fiscalMonthOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* ช่วงเวลา */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500 font-medium">ช่วงเวลา (เริ่มต้น)</label>
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500 font-medium">ช่วงเวลา (สิ้นสุด)</label>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <button
+              onClick={handleDateRangeSearch}
+              disabled={!customStartDate || !customEndDate}
+              className="text-sm px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+            >
+              ค้นหา
+            </button>
+
+            {/* ปุ่มรีเซ็ต */}
+            <button
+              onClick={handleResetFilters}
+              className="text-sm px-3 py-1.5 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1"
+            >
+              <RefreshCw size={14} />
+              รีเซ็ต
+            </button>
+          </div>
+
+          {/* Legend */}
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            {activeLeaveTypes.map((type) => (
+              <div key={type} className="flex items-center gap-1.5 text-xs">
+                <span
+                  className="w-3 h-3 rounded-sm"
+                  style={{ backgroundColor: leaveTypeConfig[type].color }}
+                />
+                <span className="text-slate-600">{leaveTypeConfig[type].label}</span>
+              </div>
+            ))}
           </div>
 
           {/* Chart */}
