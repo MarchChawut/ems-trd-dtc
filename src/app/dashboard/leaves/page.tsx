@@ -1054,7 +1054,7 @@ export default function LeavesPage() {
                   setIsModalOpen(false);
                   setIsEditMode(false);
                   setEditingLeaveId(null);
-                  setNewLeave({ userId: '', type: 'SICK', startDate: '', endDate: '', reason: '' });
+                  setNewLeave({ userId: '', type: 'SICK', startDate: '', endDate: '', reason: '', contactAddress: '' });
                   setLeaveMode('fullday');
                 }}
                 className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"
