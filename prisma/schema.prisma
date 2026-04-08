@@ -22,7 +22,6 @@ model User {
   password  String   @db.VarChar(255) // เก็บรหัสผ่านที่เข้ารหัสแล้ว
   prefix    String?  @db.VarChar(50) // คำนำหน้า เช่น นาย, น.ส., ร.ต., ว่าที่ ร.ต., คุณหญิง
   name      String   @db.VarChar(100)
-  birthday  DateTime?
   role      Role     @default(EMPLOYEE)
   department String? @db.VarChar(100) // กอง เช่น กองการศึกษา วิจัย และพัฒนา
   division   String? @db.VarChar(200) // สังกัด เช่น ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง
