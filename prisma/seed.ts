@@ -4,7 +4,7 @@
  * ==================================================
  * ไฟล์นี้ใช้สำหรับสร้างข้อมูลเริ่มต้นในระบบ
  * รวมถึงผู้ใช้ admin และข้อมูลตัวอย่าง
- * 
+ *
  * การใช้งาน:
  * npx prisma db seed
  * หรือ
@@ -16,6 +16,11 @@ import { hashPassword } from '../src/lib/security';
 
 const prisma = new PrismaClient();
 
+// helper: แปลงวันเกิดจาก พ.ศ. เป็น Date object (ค.ศ.)
+function bdTH(day: number, month: number, buddhistYear: number): Date {
+  return new Date(buddhistYear - 543, month - 1, day);
+}
+
 /**
  * ฟังก์หลักสำหรับ seed ข้อมูล
  */
@@ -23,388 +28,487 @@ async function main() {
   console.log('🌱 เริ่มต้น seed ข้อมูล...');
 
   // ============================================
-  // สร้างผู้ใช้ Admin
+  // สร้างผู้ใช้ Admin (ลำดับที่ 6 - มาร์ช)
   // ============================================
   console.log('👤 กำลังสร้างผู้ใช้ Admin...');
-  
+
   const adminPassword = await hashPassword('TRD02.trd02');
-  
+
   const admin = await prisma.user.upsert({
     where: { username: 'admin' },
-    update: {},
-    create: {
-      email: 'admin@ems.local',
-      username: 'admin',
-      password: adminPassword,
+    update: {
+      email: 'chawut.sa@gmail.com',
+      prefix: 'นาย',
       name: 'ชาวุฒิ สงวนศักดิ์',
+      phone: '084-4928647',
+      birthday: bdTH(23, 2, 2531),
       role: Role.SUPER_ADMIN,
       department: 'กองการศึกษา วิจัย และพัฒนา',
       division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'ตรวจสอบการปฏิบัติ 1',
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
       positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 9,
-      avatar: 'PP',
+      positionLevel: 3,
+    },
+    create: {
+      email: 'chawut.sa@gmail.com',
+      username: 'admin',
+      password: adminPassword,
+      prefix: 'นาย',
+      name: 'ชาวุฒิ สงวนศักดิ์',
+      phone: '084-4928647',
+      birthday: bdTH(23, 2, 2531),
+      role: Role.SUPER_ADMIN,
+      department: 'กองการศึกษา วิจัย และพัฒนา',
+      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
+      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
+      positionLevel: 3,
+      avatar: 'CS',
       isActive: true,
     },
   });
-  
+
   console.log('✅ สร้างผู้ใช้ Admin สำเร็จ:', admin.username);
 
   // ============================================
-  // สร้างผู้ใช้ตัวอย่าง
+  // สร้างผู้ใช้ทั้งหมดจากรายชื่อ
   // ============================================
-  console.log('👥 กำลังสร้างผู้ใช้ตัวอย่าง...');
-  
+  console.log('👥 กำลังสร้างผู้ใช้...');
+
   const userPassword = await hashPassword('trd-dtc.123');
-  
-  const sampleUsers = [
+
+  const allUsers = [
+    // ลำดับที่ 1 - พ.อ.ปรียพงศ์ (ปอ) - ผู้อำนวยการกอง
     {
-      email: 'ppong@ems.local',
       username: 'ppong',
+      email: 'preeyapong.samipagdi@gmail.com',
+      prefix: 'พ.อ.',
       name: 'ปรียพงศ์ สามิภักดิ์',
+      phone: '081-9092616',
+      birthday: bdTH(27, 5, 2519),
       role: Role.MANAGER,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
       position: 'ผู้อำนวยการกอง',
       positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 9,
+      positionLevel: null,
       avatar: 'PP',
-    },{
-      email: 'oratiy@ems.local',
+    },
+    // ลำดับที่ 2 - นางสาวอรทัย (จิ๋ว) - รองหัวหน้าฝ่าย ระดับ 6
+    {
       username: 'oratiy',
-      name: 'น.ส.อรทัย ติยศิวาพร',
+      email: 'ora1975@gmail.com',
+      prefix: 'นางสาว',
+      name: 'อรทัย ติยศิวาพร',
+      phone: '095-7279649',
+      birthday: bdTH(13, 2, 2518),
       role: Role.MANAGER,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายตรวจสอบการปฏิบัติ',
+      position: 'รองหัวหน้าฝ่าย ระดับ 6',
       positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 7,
-      avatar: 'PJ',
+      positionLevel: 6,
+      avatar: 'OT',
     },
+    // ลำดับที่ 3 - ร.ท.ชยาวิชญ์ (อาร์ม) - เจ้าหน้าที่ฯ ระดับ 5
     {
-      email: 'chayawit@ems.local',
       username: 'chayawit',
-      name: 'ร.ท.ชยาวิชญ์ ลีลา',
+      email: 'chyanantormor@gmail.com',
+      prefix: 'ร.ท.',
+      name: 'ชยาวิชญ์ ลีลา',
+      phone: '080-571-5203',
+      birthday: bdTH(6, 8, 2538),
       role: Role.MANAGER,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างชั่วคราวรายเดือน',
-      avatar: 'CL',
-    },
-    {
-      email: 'koseh@ems.local',
-      username: 'mrko',
-      name: 'ร.ท.โกเศศ ศรีอุทธา',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 5',
       positionSecond: 'เจ้าหน้าที่งานในพระองค์',
       positionLevel: 5,
-      avatar: 'KS',
+      avatar: 'CL',
     },
+    // ลำดับที่ 4 - ร.ท.โกเศศ (ยิน) - เจ้าหน้าที่ฯ ระดับ 4
     {
-      email: 'narongrit@ems.local',
-      username: 'narongrit',
-      name: 'นายณรงฤทธิ์ ศรีนวล',
+      username: 'mrko',
+      email: '',
+      prefix: 'ร.ท.',
+      name: 'โกเศศ ศรีอุทธา',
+      phone: '092-6814550',
+      birthday: bdTH(10, 3, 2532),
       role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างชั่วคราวรายเดือน',
-      avatar: 'NS',
-    },
-    {
-      email: 'phurinut@ems.local',
-      username: 'phurinut',
-      name: 'นายภูริณัฐ ใหม่อ่อน',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 4',
       positionSecond: 'เจ้าหน้าที่งานในพระองค์',
       positionLevel: 4,
+      avatar: 'KS',
+    },
+    // ลำดับที่ 5 - นายภูริณัฐ (ภูมิ) - เจ้าหน้าที่ฯ ระดับ 3
+    {
+      username: 'phurinut',
+      email: 'phurinat1691@gmail.com',
+      prefix: 'นาย',
+      name: 'ภูริณัฐ ใหม่อ่อน',
+      phone: '090-9260191',
+      birthday: bdTH(2, 6, 2537),
+      role: Role.EMPLOYEE,
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
+      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
+      positionLevel: 3,
       avatar: 'PM',
     },
+    // ลำดับที่ 7 - นายณรงฤทธิ์ (บาส) - เจ้าหน้าที่ฯ ระดับ 3
     {
-      email: 'wareerut@ems.local',
-      username: 'wareerut',
-      name: 'น.ส.วารีรัตน์ มากมี',
+      username: 'narongrit',
+      email: 'bastrd.dtc@gmail.com',
+      prefix: 'นาย',
+      name: 'ณรงฤทธิ์ ศรีนวล',
+      phone: '095-7737779',
+      birthday: bdTH(25, 12, 2534),
       role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างชั่วคราวรายเดือน',
-      avatar: 'WM',
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
+      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
+      positionLevel: 3,
+      avatar: 'NS',
     },
+    // ลำดับที่ 8 - นางสาวมลสนา (ปอ) - เจ้าหน้าที่ฯ ระดับ 3
     {
-      email: 'spore@ems.local',
-      username: 'admin2',
-      name: 'น.ส.กมลชนก นามหงสา',
+      username: 'molsana',
+      email: 'a_por15@hotmail.com',
+      prefix: 'นางสาว',
+      name: 'มลสนา นามหงสา',
+      phone: '097-1426946',
+      birthday: bdTH(31, 8, 2530),
+      role: Role.EMPLOYEE,
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
+      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
+      positionLevel: 3,
+      avatar: 'MN',
+    },
+    // ลำดับที่ 9 - นางสาวสุวิภาพร (แอม) - เจ้าหน้าที่ฯ ระดับ 3
+    {
+      username: 'admin3',
+      email: 'suwipaporn.1992@gmail.com',
+      prefix: 'นางสาว',
+      name: 'สุวิภาพร ศรีเนตร',
+      phone: '080-5629787',
+      birthday: bdTH(21, 11, 2535),
       role: Role.SUPER_ADMIN,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
-      avatar: 'KN',
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
+      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
+      positionLevel: 3,
+      avatar: 'SS',
     },
+    // ลำดับที่ 10 - นางสาววาริรัตน์ (อุ้ย) - เจ้าหน้าที่ฯ ระดับ 3
     {
-      email: 'phutdhinet@ems.local',
-      username: 'phutdhinet',
-      name: 'น.ส.พุทธิเนตร สุดดีพงศ์',
+      username: 'wareerut',
+      email: 'assdkapore@gmail.com',
+      prefix: 'นางสาว',
+      name: 'วาริรัตน์ สุก้อน',
+      phone: '089-8887351',
+      birthday: bdTH(13, 2, 2523),
       role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
+      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
+      positionLevel: 3,
+      avatar: 'WS',
+    },
+    // ลำดับที่ 11 - นางสาวอชิรญา (อิ้ง) - เจ้าหน้าที่ฯ ระดับ 3
+    {
+      username: 'archiraya',
+      email: 'atnannat@gmail.com',
+      prefix: 'นางสาว',
+      name: 'อชิรญา อนุตรวัฒนกุล',
+      phone: '080-4897398',
+      birthday: bdTH(28, 3, 2539),
+      role: Role.EMPLOYEE,
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
+      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
+      positionLevel: 3,
+      avatar: 'AA',
+    },
+    // ลำดับที่ 12 - นางสาวขวัญทยา (ลิ้ง) - เจ้าหน้าที่ฯ ระดับ 3
+    {
+      username: 'kwan',
+      email: 'kwanthayar@gmail.com',
+      prefix: 'นางสาว',
+      name: 'ขวัญทยา รวมทรัพย์',
+      phone: '096-7548555',
+      birthday: bdTH(27, 6, 2540),
+      role: Role.EMPLOYEE,
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
+      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
+      positionLevel: 3,
+      avatar: 'KR',
+    },
+    // ลำดับที่ 13 - นายอัครวุฒิ (แบงค์) - เจ้าหน้าที่ฯ ระดับ 3
+    {
+      username: 'akrarawut',
+      email: 'bankop2566@gmail.com',
+      prefix: 'นาย',
+      name: 'อัครวุฒิ งามวิถี',
+      phone: '090-4171651',
+      birthday: bdTH(13, 10, 2534),
+      role: Role.EMPLOYEE,
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
+      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
+      positionLevel: 3,
+      avatar: 'AN',
+    },
+    // ลำดับที่ 14 - นางสาวพุทธิเนตร (มิน) - เจ้าหน้าที่ฯ ระดับ 3
+    {
+      username: 'phutdhinet',
+      email: 'puttinate@gmail.com',
+      prefix: 'นางสาว',
+      name: 'พุทธิเนตร สุดดีพงศ์',
+      phone: '085-9149021',
+      birthday: bdTH(21, 5, 2531),
+      role: Role.EMPLOYEE,
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
       positionSecond: 'เจ้าหน้าที่งานในพระองค์',
       positionLevel: 3,
       avatar: 'PS',
     },
+    // ลำดับที่ 15 - นายรณฤทธิ์ (สมาย) - เจ้าหน้าที่ฯ ระดับ 3
     {
-      email: 'akrarawut@ems.local',
-      username: 'akrarawut',
-      name: 'นายอัครวุฒิ นามวิถี',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายตรวจสอบการปฏิบัติ',
-      positionSecond: 'ลูกจ้างชั่วคราวรายเดือน',
-      avatar: 'AN',
-    },
-    {
-      email: 'slyth@ems.local',
-      username: 'admin3',
-      name: 'น.ส.สุวิภาพร ศรีเนตร',
-      role: Role.SUPER_ADMIN,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 6,
-      avatar: 'SS',
-    },
-    {
-      email: 'ronnarit@ems.local',
       username: 'ronnarit',
-      name: 'นายรณฤทธิ์ พิลาไชย',
+      email: 'smilebubfalo@gmail.com',
+      prefix: 'นาย',
+      name: 'รณฤทธิ์ พิลาไชย',
+      phone: '082-5906445',
+      birthday: bdTH(22, 2, 2539),
       role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
-      avatar: 'RP',
-    },
-    {
-      email: 'archiraya@ems.local',
-      username: 'archiraya',
-      name: 'น.ส.อชิรญา อนุตรวัฒนกุล',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 2,
-      avatar: 'AA',
-    },
-    {
-      email: 'kwan@ems.local',
-      username: 'kwan',
-      name: 'น.ส.ขวัญทยา รวมทรัพย์',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างชั่วคราวรายเดือน',
-      avatar: 'KR',
-    },
-    {
-      email: 'aekarin@ems.local',
-      username: 'aekarin',
-      name: 'นายเอกรินทร์ โพธิวัฒน์',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายตรวจสอบการปฏิบัติ',
-      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
-      avatar: 'AP',
-    },
-    {
-      email: 'wasittee@ems.local',
-      username: 'wasittee',
-      name: 'น.ส.วาสิฏฐี มุสิกะพันธ์',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 8,
-      avatar: 'WM',
-    },
-    {
-      email: 'pongsiri@ems.local',
-      username: 'pongsiri',
-      name: 'นายพงศ์ศิริ เกษตรสิน',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างชั่วคราวรายเดือน',
-      avatar: 'PK',
-    },
-    {
-      email: 'piyaporn@ems.local',
-      username: 'piyaporn',
-      name: 'น.ส.ปิยพร นนทภา',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 9,
-      avatar: 'PN',
-    },
-    {
-      email: 'waraporn@ems.local',
-      username: 'waraporn',
-      name: 'น.ส.วราภรณ์ คงเกตุ',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
-      avatar: 'WK',
-    },
-    {
-      email: 'thitikorn@ems.local',
-      username: 'thitikorn',
-      name: 'นายฐิติกร จ่าวัง',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายตรวจสอบการปฏิบัติ',
-      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 10,
-      avatar: 'TJ',
-    },
-    {
-      email: 'yothin@ems.local',
-      username: 'yothin',
-      name: 'นายโยธิน ตั้งชนะชัยพงษ์',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างชั่วคราวรายเดือน',
-      avatar: 'YT',
-    },
-    {
-      email: 'jurarat@ems.local',
-      username: 'jurarat',
-      name: 'น.ส.จุฬารัชต์ มากเปรมบุญ',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 1,
-      avatar: 'JM',
-    },
-    {
-      email: 'sirirung@ems.local',
-      username: 'sirirung',
-      name: 'น.ส.สิริรุ่ง กถาวิโรจน์',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
-      avatar: 'SK',
-    },
-    {
-      email: 'hathaiphat@ems.local',
-      username: 'hathaiphat',
-      name: 'น.ส.หทัยภัทร อังศุการ',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 11,
-      avatar: 'HA',
-    },
-    {
-      email: 'anuchit@ems.local',
-      username: 'anuchit',
-      name: 'นายอนุชิต เจริญเขต',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายตรวจสอบการปฏิบัติ',
-      positionSecond: 'ลูกจ้างชั่วคราวรายเดือน',
-      avatar: 'AJ',
-    },
-    {
-      email: 'niphat@ems.local',
-      username: 'niphat',
-      name: 'นายนิภัทร์ ใจซื่อ',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'เจ้าหน้าที่งานในพระองค์',
-      positionLevel: 7,
-      avatar: 'NJ',
-    },
-    {
-      email: 'thakoon@ems.local',
-      username: 'thakoon',
-      name: 'นายฐากูร ตั้งชนะชัยพงษ์',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
-      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
-      avatar: 'TT',
-    },
-    {
-      email: 'chatnapa@ems.local',
-      username: 'chatnapa',
-      name: 'น.ส.ฉัตรนภา ปันแสง',
-      role: Role.EMPLOYEE,
-      department: 'กองการศึกษา วิจัย และพัฒนา',
-      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
-      position: 'จนท.ฝ่ายธุรการ',
+      position: 'เจ้าหน้าที่งานในพระองค์ ระดับ 3',
       positionSecond: 'เจ้าหน้าที่งานในพระองค์',
       positionLevel: 3,
+      avatar: 'RP',
+    },
+    // ลำดับที่ 16 - นายเอกรินทร์ (โหนก) - ลูกจ้างท้ายที่นั่ง ระดับ 2
+    {
+      username: 'aekarin',
+      email: 'Egkarin_tu@hotmail.com',
+      prefix: 'นาย',
+      name: 'เอกรินทร์ โพธิวัฒน์',
+      phone: '095-8945808',
+      birthday: bdTH(26, 3, 2531),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'AP',
+    },
+    // ลำดับที่ 17 - นางสาววราภรณ์ (ครีม) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'waraporn',
+      email: 'Waraporn253827068@gmail.com',
+      prefix: 'นางสาว',
+      name: 'วราภรณ์ คงเกตุ',
+      phone: '061-8585269',
+      birthday: bdTH(18, 8, 2538),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'WK',
+    },
+    // ลำดับที่ 18 - นางสาวปิยพร (น้ำ) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'piyaporn',
+      email: 'piyapornnontapa@gmail.com',
+      prefix: 'นางสาว',
+      name: 'ปิยพร นนทภา',
+      phone: '092-6761335',
+      birthday: bdTH(26, 5, 2537),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'PN',
+    },
+    // ลำดับที่ 19 - นางสาววาสิฏฐี (ออ) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'wasittee',
+      email: 'aor.wasittee@gmail.com',
+      prefix: 'นางสาว',
+      name: 'วาสิฏฐี มุสิกะพันธ์',
+      phone: '084-9553816',
+      birthday: bdTH(14, 10, 2531),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'WM',
+    },
+    // ลำดับที่ 20 - นายโยธิน (โย) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'yothin',
+      email: 'yothin.tangchanachaiphong@gmail.com',
+      prefix: 'นาย',
+      name: 'โยธิน ตั้งชนะชัยพงษ์',
+      phone: '098-1509955',
+      birthday: bdTH(3, 4, 2540),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'YT',
+    },
+    // ลำดับที่ 21 - นายฐิติกร (บาส) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'thitikorn',
+      email: 'thitikorn.jawangs@gmail.com',
+      prefix: 'นาย',
+      name: 'ฐิติกร จ่าวัง',
+      phone: '098-2742946',
+      birthday: bdTH(28, 5, 2540),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'TJ',
+    },
+    // ลำดับที่ 22 - พงศ์ศิริ (ดล) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'pongsiri',
+      email: 'pongsiri.kase@gmail.com',
+      prefix: 'นาย',
+      name: 'พงศ์ศิริ เกษตรสิน',
+      phone: '062-3929193',
+      birthday: bdTH(24, 6, 2535),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'PK',
+    },
+    // ลำดับที่ 23 - นางสาวจุฬารัชต์ (ลูกปัด) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'jurarat',
+      email: 'llukpadmak@gmail.com',
+      prefix: 'นางสาว',
+      name: 'จุฬารัชต์ มากเปรมบุญ',
+      phone: '081-5322351',
+      birthday: bdTH(30, 11, 2536),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'JM',
+    },
+    // ลำดับที่ 24 - นายฐากูร (โช) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'thakoon',
+      email: 'takoon2a@gmail.com',
+      prefix: 'นาย',
+      name: 'ฐากูร ตั้งชนะชัยพงษ์',
+      phone: '095-4782631',
+      birthday: bdTH(23, 7, 2546),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'TT',
+    },
+    // ลำดับที่ 25 - นายนิภัทร์ (โจ) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'niphat',
+      email: 'niphat.nj@gmail.com',
+      prefix: 'นาย',
+      name: 'นิภัทร์ ใจซื่อ',
+      phone: '098-9124328',
+      birthday: bdTH(7, 12, 2542),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'NJ',
+    },
+    // ลำดับที่ 26 - นางสาวฉัตรนภา (เนอส) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'chatnapa',
+      email: 'nurse.cnp@gmail.com',
+      prefix: 'นางสาว',
+      name: 'ฉัตรนภา ปันแสง',
+      phone: '091-7787450',
+      birthday: bdTH(2, 2, 2546),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
       avatar: 'CP',
     },
+    // ลำดับที่ 27 - นางสาวสิริรุ่ง (เอิน) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'sirirung',
+      email: 'Sirirungg2541@gmail.com',
+      prefix: 'นางสาว',
+      name: 'สิริรุ่ง กถาวิโรจน์',
+      phone: '062-3584832',
+      birthday: bdTH(25, 8, 2541),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'SK',
+    },
+    // ลำดับที่ 28 - นายอนุชิต (ต้า) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'anuchit',
+      email: 'Anuchit_tar42@hotmail.com',
+      prefix: 'นาย',
+      name: 'อนุชิต เจริญเขต',
+      phone: '095-5105959',
+      birthday: bdTH(13, 2, 2542),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'AJ',
+    },
+    // ลำดับที่ 29 - นางสาวหทัยภัทร (อุ้ม) - ลูกจ้างท้ายที่นั่ง
+    {
+      username: 'hathaiphat',
+      email: 'hataipat.a@gmail.com',
+      prefix: 'นางสาว',
+      name: 'หทัยภัทร อังศุการ',
+      phone: '098-8914441',
+      birthday: bdTH(24, 9, 2543),
+      role: Role.EMPLOYEE,
+      position: 'ลูกจ้างท้ายที่นั่ง',
+      positionSecond: 'ลูกจ้างท้ายที่นั่ง',
+      positionLevel: null,
+      avatar: 'HA',
+    },
   ];
-  
-  for (const userData of sampleUsers) {
+
+  for (const userData of allUsers) {
+    const { email, birthday, positionLevel, phone, ...rest } = userData;
+    const createData: any = {
+      ...rest,
+      password: userPassword,
+      isActive: true,
+      department: 'กองการศึกษา วิจัย และพัฒนา',
+      division: 'ศูนย์เทคโนโลยีดิจิทัล สำนักพระราชวัง',
+    };
+    if (email) createData.email = email;
+    else createData.email = `${rest.username}@ems.local`;
+    if (birthday) createData.birthday = birthday;
+    if (positionLevel !== null) createData.positionLevel = positionLevel;
+    if (phone) createData.phone = phone;
+
+    const updateData: any = { ...createData };
+    delete updateData.password; // ไม่รีเซ็ต password เมื่อ update
+
     const user = await prisma.user.upsert({
       where: { username: userData.username },
-      update: {},
-      create: {
-        ...userData,
-        password: userPassword,
-        isActive: true,
-      },
+      update: updateData,
+      create: createData,
     });
-    console.log('✅ สร้างผู้ใช้:', user.name);
+    console.log('✅ บันทึกผู้ใช้:', user.name);
   }
 
   // ============================================
   // สร้างคอลัมน์ Kanban เริ่มต้น
   // ============================================
   console.log('📊 กำลังสร้างคอลัมน์ Kanban...');
-  
+
   const defaultColumns = [
     { name: 'รอดำเนินการ', color: 'slate', order: 0, isDefault: true },
     { name: 'กำลังทำ', color: 'blue', order: 1, isDefault: true },
     { name: 'เสร็จสิ้น', color: 'emerald', order: 2, isDefault: true },
   ];
-  
+
   for (const colData of defaultColumns) {
     const column = await prisma.kanbanColumn.upsert({
       where: { id: colData.order + 1 },
@@ -414,93 +518,11 @@ async function main() {
     console.log('✅ สร้างคอลัมน์:', column.name);
   }
 
-  // ============================================
-  // สร้างงานตัวอย่าง
-  // ============================================
-  console.log('📋 กำลังสร้างงานตัวอย่าง...');
-  
-  const sampleTasks = [
-    {
-      title: 'ออกแบบหน้า UI ใหม่',
-      description: 'ออกแบบหน้า Dashboard ใหม่ตาม requirements',
-      columnId: 1, // รอดำเนินการ
-      priority: Priority.HIGH,
-      assigneeId: 4, // สมหญิง
-    },
-    {
-      title: 'เชื่อมต่อ API ระบบ Login',
-      description: 'พัฒนา API สำหรับการเข้าสู่ระบบ',
-      columnId: 2, // กำลังทำ
-      priority: Priority.HIGH,
-      assigneeId: 3, // วิชัย
-    },
-    {
-      title: 'ทำรายงานสรุปประจำเดือน',
-      description: 'สรุปผลงานประจำเดือนมกราคม',
-      columnId: 3, // เสร็จสิ้น
-      priority: Priority.MEDIUM,
-      assigneeId: 5, // นารี
-    },
-    {
-      title: 'อัปเดตเอกสารระบบ',
-      description: 'อัปเดตคู่มือการใช้งานระบบ',
-      columnId: 1, // รอดำเนินการ
-      priority: Priority.LOW,
-      assigneeId: null,
-    },
-  ];
-  
-  for (const taskData of sampleTasks) {
-    const task = await prisma.task.create({
-      data: taskData,
-    });
-    console.log('✅ สร้างงาน:', task.title);
-  }
-
-  // ============================================
-  // สร้างรายการลาตัวอย่าง
-  // ============================================
-  console.log('📅 กำลังสร้างรายการลาตัวอย่าง...');
-  
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  
-  const sampleLeaves = [
-    {
-      userId: 4, // สมหญิง
-      type: LeaveType.SICK,
-      startDate: new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000), // 7 วันที่แล้ว
-      endDate: new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000),
-      reason: 'ไม่สบาย มีไข้',
-      status: LeaveStatus.APPROVED,
-      approvedBy: 2, // admin
-      approvedAt: new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000),
-    },
-    {
-      userId: 3, // วิชัย
-      type: LeaveType.PERSONAL,
-      startDate: tomorrow,
-      endDate: new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000),
-      reason: 'ทำธุระที่ธนาคาร',
-      status: LeaveStatus.PENDING,
-      approvedBy: null,
-      approvedAt: null,
-    },
-  ];
-  
-  for (const leaveData of sampleLeaves) {
-    const leave = await prisma.leave.create({
-      data: leaveData,
-    });
-    console.log('✅ สร้างรายการลา:', leave.id);
-  }
-
   console.log('✨ Seed ข้อมูลเสร็จสมบูรณ์!');
   console.log('');
   console.log('🔑 ข้อมูลเข้าสู่ระบบ:');
   console.log('   Username: admin');
-  console.log('   Password: admin123');
+  console.log('   Password: TRD02.trd02');
 }
 
 /**

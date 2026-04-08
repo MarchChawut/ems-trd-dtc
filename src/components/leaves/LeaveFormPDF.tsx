@@ -85,9 +85,8 @@ function calculateLeaveDays(
   hours?: number | null,
 ): string {
   if (hours && hours > 0) {
-    if (hours === 4) return "0.5";
-    if (hours === 8) return "1";
-    return hours.toString();
+    // 1 ชม. = 0.1 วัน, 8 ชม. = 0.8 วัน
+    return (Math.round((hours / 10) * 10) / 10).toFixed(1);
   }
 
   if (isHalfDay) return "0.5";
@@ -252,6 +251,21 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
     leave.isHalfDay,
     leave.hours,
   );
+  // หน่วยที่แสดงหลัง leaveDays
+  const leaveUnit = (leave.hours && leave.hours > 0) ? "ชม." : "วัน";
+
+  // แปลง hours → วัน (1 ชม. = 0.1 วัน, 8 ชม. = 0.8 วัน)
+  const currentDaysValue = leave.hours && leave.hours > 0
+    ? Math.round((leave.hours / 10) * 10) / 10
+    : parseFloat(leaveDays) || 1;
+
+  // label หัวตาราง
+  const tableUnit = leave.hours && leave.hours > 0 ? "ครั้ง/ชม." : "ครั้ง/วัน";
+
+  // ค่าที่แสดงในช่อง "ลาครั้งนี้" — แสดง ชม. จริง
+  const currentDaysDisplay = leave.hours && leave.hours > 0
+    ? leave.hours
+    : currentDaysValue;
 
   const leaveTypeLabel = leaveTypeLabels[leave.type];
 
@@ -259,9 +273,9 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
     pastCount: 0,
     pastDays: 0,
     currentCount: 1,
-    currentDays: parseFloat(leaveDays) || 1,
+    currentDays: currentDaysValue,
     totalCount: 1,
-    totalDays: parseFloat(leaveDays) || 1,
+    totalDays: currentDaysValue,
   };
 
   return (
@@ -435,6 +449,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
           >
             {leaveDays}
           </Text>
+          <Text style={styles.label}> {leaveUnit} </Text>
         </View>
 
         {/* ข้าพเจ้าได้ลา + ครั้งสุดท้ายตั้งแต่วันที่ */}
@@ -521,7 +536,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
             {leaveDays}
           </Text>
           <Text style={styles.label}>
-            {" "}
+            {" "}{leaveUnit}{" "}
             ในระหว่างลาจะติดต่อข้าพเจ้าได้ที่{" "}
           </Text>
           <Text style={[styles.dottedLine, { minWidth: 35 }]}>
@@ -588,10 +603,10 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
                   ลามาแล้ว{"\n"}ครั้ง/วัน
                 </Text>
                 <Text style={[styles.tableHeader, { width: "25%" }]}>
-                  ลาครั้งนี้{"\n"}ครั้ง/วัน
+                  ลาครั้งนี้{"\n"}{tableUnit}
                 </Text>
                 <Text style={[styles.tableHeader, { width: "25%" }]}>
-                  รวมเป็น{"\n"}ครั้ง/วัน
+                  รวมเป็น{"\n"}{tableUnit}
                 </Text>
               </View>
               <View style={styles.tableRow}>
@@ -603,7 +618,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
                 </Text>
                 <Text style={styles.tableCell}>
                   {leave.type === "SICK"
-                    ? `${stats.currentCount}/${stats.currentDays}`
+                    ? `${stats.currentCount}/${currentDaysDisplay}`
                     : ""}
                 </Text>
                 <Text style={styles.tableCell}>
@@ -621,7 +636,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
                 </Text>
                 <Text style={styles.tableCell}>
                   {leave.type === "PERSONAL"
-                    ? `${stats.currentCount}/${stats.currentDays}`
+                    ? `${stats.currentCount}/${currentDaysDisplay}`
                     : ""}
                 </Text>
                 <Text style={styles.tableCell}>
@@ -639,7 +654,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
                 </Text>
                 <Text style={styles.tableCell}>
                   {leave.type === "MATERNITY"
-                    ? `${stats.currentCount}/${stats.currentDays}`
+                    ? `${stats.currentCount}/${currentDaysDisplay}`
                     : ""}
                 </Text>
                 <Text style={styles.tableCell}>
@@ -657,7 +672,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
                 </Text>
                 <Text style={styles.tableCell}>
                   {leave.type === "EARLY_LEAVE"
-                    ? `${stats.currentCount}/${stats.currentDays}`
+                    ? `${stats.currentCount}/${currentDaysDisplay}`
                     : ""}
                 </Text>
                 <Text style={styles.tableCell}>
@@ -763,20 +778,28 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
               <Text style={[styles.dottedLine, { minWidth: 155 }]} />
             </View>
 
+            {/* (ชื่อ) ลอยบนเส้นประ */}
             <View style={[styles.leftAlignRow, { justifyContent: "center" }]}>
-              <Text>( </Text>
-              <Text style={[styles.dottedLine, { minWidth: 155 }]} />
-              <Text> )</Text>
+              <Text
+                style={[
+                  styles.dottedLine,
+                  { minWidth: 155, textAlign: "center" },
+                ]}
+              >
+                ( ปรียพงศ์  สามิภักดิ์ )
+              </Text>
             </View>
 
-            <View style={[styles.leftAlignRow, { justifyContent: "center" }]}>
-              <Text>ตำแหน่ง </Text>
-              <Text style={[styles.dottedLine, { minWidth: 155 }]} />
-            </View>
-
-            {/* เส้นเพิ่มใต้ตำแหน่ง */}
-            <View style={{ marginBottom: 5 }}>
-              <Text style={[styles.dottedLine, { width: "100%" }]} />
+            {/* ตำแหน่ง ลอยบนเส้นประ */}
+            <View style={[styles.leftAlignRow, { justifyContent: "center", marginBottom: 5 }]}>
+              <Text
+                style={[
+                  styles.dottedLine,
+                  { minWidth: 155, textAlign: "center" },
+                ]}
+              >
+                ตำแหน่ง ผอ.กองการศึกษา วิจัย และพัฒนา
+              </Text>
             </View>
 
             <View style={[styles.leftAlignRow, { justifyContent: "center" }]}>

@@ -110,8 +110,8 @@ function calculateLeaveDaysNum(
   holidays?: Holiday[],
 ): number {
   if (hours && hours > 0) {
-    // 1 ชม. = 0.1 วัน, 8 ชม. = 0.8 วัน
-    return Math.round((hours / 10) * 10) / 10;
+    // 4 ชม. = 0.5 วัน, 8 ชม. = 1 วัน
+    return Math.round((hours / 8) * 100) / 100;
   }
   if (isHalfDay) {
     return 0.5;
@@ -145,10 +145,11 @@ function formatLeaveDays(
   hours?: number | null,
   isHalfDay?: boolean,
 ): string {
-  // ลาเป็นชั่วโมง: 1 ชม. = 0.1 วัน, 8 ชม. = 0.8 วัน
+  // ลาเป็นชั่วโมง: แสดง ชม. + วันเทียบเท่า (4 ชม. = 0.5 วัน, 8 ชม. = 1 วัน)
   if (hours && hours > 0) {
-    const dayEquiv = (Math.round((hours / 10) * 10) / 10).toFixed(1);
-    return `${dayEquiv} วัน`;
+    const dayEquiv = Math.round((hours / 8) * 100) / 100;
+    const dayStr = dayEquiv % 1 === 0 ? `${dayEquiv}` : `${dayEquiv}`;
+    return `${hours} ชม. (${dayStr} วัน)`;
   }
   if (isHalfDay || days === 0.5) {
     return "0.5 วัน";

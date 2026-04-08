@@ -146,6 +146,7 @@ export default function EmployeesPage() {
     positionSecond: '',
     positionLevel: '',
     phone: '',
+    birthday: '',
     address: '',
     isActive: true,
   });
@@ -369,6 +370,7 @@ export default function EmployeesPage() {
       positionSecond: user.positionSecond || '',
       positionLevel: user.positionLevel ? String(user.positionLevel) : '',
       phone: (user as any).phone || '',
+      birthday: (user as any).birthday ? new Date((user as any).birthday).toISOString().split('T')[0] : '',
       address: (user as any).address || '',
       isActive: user.isActive,
     });
@@ -398,6 +400,7 @@ export default function EmployeesPage() {
           positionSecond: editForm.positionSecond || null,
           positionLevel: editForm.positionLevel ? parseInt(editForm.positionLevel) : null,
           phone: editForm.phone || null,
+          birthday: editForm.birthday || null,
           address: editForm.address || null,
           isActive: editForm.isActive,
         }),
@@ -1298,6 +1301,17 @@ export default function EmployeesPage() {
                   className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
                   value={editForm.phone}
                   onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                />
+              </div>
+
+              {/* วันเกิด */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">วันเกิด</label>
+                <input
+                  type="date"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={editForm.birthday}
+                  onChange={(e) => setEditForm({ ...editForm, birthday: e.target.value })}
                 />
               </div>
 

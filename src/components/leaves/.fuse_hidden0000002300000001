@@ -148,7 +148,7 @@ function formatLeaveDays(
   // ลาเป็นชั่วโมง: 1 ชม. = 0.1 วัน, 8 ชม. = 0.8 วัน
   if (hours && hours > 0) {
     const dayEquiv = (Math.round((hours / 10) * 10) / 10).toFixed(1);
-    return `${dayEquiv} วัน`;
+    return `${hours} ชม. (${dayEquiv} วัน)`;
   }
   if (isHalfDay || days === 0.5) {
     return "0.5 วัน";
@@ -1488,5 +1488,3 @@ export default function LeaveForm({
         </div>
       </div>
     </div>
-  );
-}

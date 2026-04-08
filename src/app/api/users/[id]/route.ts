@@ -24,6 +24,7 @@ const updateUserSchema = z.object({
   positionSecond: z.string().max(100).nullable().optional(),
   positionLevel: z.number().int().min(1).max(11).nullable().optional(),
   phone: z.string().max(20).nullable().optional(),
+  birthday: z.string().nullable().optional(), // YYYY-MM-DD
   address: z.string().max(500).nullable().optional(),
   profileImage: z.string().max(500).nullable().optional(),
   isActive: z.boolean().optional(),
@@ -84,6 +85,7 @@ export async function GET(
         positionSecond: true,
         positionLevel: true,
         phone: true,
+        birthday: true,
         address: true,
         avatar: true,
         profileImage: true,
@@ -289,6 +291,10 @@ export async function PATCH(
       updateData.phone = validationResult.data.phone ? sanitizeInput(validationResult.data.phone) : null;
     }
 
+    if (validationResult.data.birthday !== undefined) {
+      updateData.birthday = validationResult.data.birthday ? new Date(validationResult.data.birthday) : null;
+    }
+
     if (validationResult.data.address !== undefined) {
       updateData.address = validationResult.data.address ? sanitizeInput(validationResult.data.address) : null;
     }
@@ -318,6 +324,7 @@ export async function PATCH(
         positionSecond: true,
         positionLevel: true,
         phone: true,
+        birthday: true,
         address: true,
         avatar: true,
         profileImage: true,

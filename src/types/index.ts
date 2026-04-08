@@ -31,6 +31,7 @@ export interface User {
   positionSecond: string | null; // ตำแหน่งรอง เช่น เจ้าหน้าที่งานในพระองค์
   positionLevel: number | null; // ระดับ 1-11
   phone: string | null; // เบอร์โทรศัพท์
+  birthday: Date | string | null; // วันเกิด
   address: string | null; // ที่อยู่
   avatar: string | null;
   profileImage: string | null;
@@ -116,6 +117,7 @@ export interface UpdateUserInput {
   positionSecond?: string;
   positionLevel?: number;
   phone?: string | null;
+  birthday?: string | null; // YYYY-MM-DD
   address?: string | null;
   profileImage?: string | null;
   isActive?: boolean;

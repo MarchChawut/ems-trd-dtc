@@ -29,6 +29,7 @@ model User {
   positionSecond String? @db.VarChar(100) // ตำแหน่งรอง เช่น ลูกจ้างชั่วคราวรายเดือน, เจ้าหน้าที่งานในพระองค์
   positionLevel Int?    // ระดับ (สำหรับเจ้าหน้าที่งานในพระองค์ 1-11)
   phone     String?  @db.VarChar(20) // เบอร์โทรศัพท์
+  birthday  DateTime? @db.Date // วันเกิด
   address   String?  @db.Text // ที่อยู่
   avatar    String?  @db.VarChar(10) // ตัวย่อชื่อสำหรับแสดง avatar
   profileImage String? @db.VarChar(500) // URL รูปโปรไฟล์

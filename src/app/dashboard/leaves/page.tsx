@@ -979,7 +979,7 @@ export default function LeavesPage() {
                           ({leave.isHalfDay
                             ? '0.5 วัน'
                             : leave.hours && leave.hours > 0
-                              ? `${leave.hours <= 3 ? '0.5' : '1'} วัน`
+                              ? `${leave.hours} ชม.`
                               : `${calculateDays(leave.startDate, leave.endDate)} วันทำการ`})
                         </span>
                       </div>
@@ -1043,9 +1043,9 @@ export default function LeavesPage() {
       {/* Modal บันทึกการลา */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            {/* Header */}
-            <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
+            {/* Header - fixed */}
+            <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50 rounded-t-xl flex-shrink-0">
               <h3 className="font-bold text-slate-800">
                 {isEditMode ? 'แก้ไขรายการลา' : 'บันทึกการลา'}
               </h3>
@@ -1063,8 +1063,8 @@ export default function LeavesPage() {
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleCreateLeave} className="p-6 space-y-4">
+            {/* Form - scrollable body */}
+            <form id="leaveForm" onSubmit={handleCreateLeave} className="p-6 space-y-4 overflow-y-auto flex-1">
               {/* เลือกพนักงาน */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1273,13 +1273,18 @@ export default function LeavesPage() {
                 />
               </div>
 
+            </form>
+
+            {/* Footer - fixed submit button */}
+            <div className="p-4 border-t border-slate-100 bg-white rounded-b-xl flex-shrink-0">
               <button
                 type="submit"
+                form="leaveForm"
                 className="w-full bg-indigo-600 text-white py-2.5 rounded-lg hover:bg-indigo-700 font-medium transition-colors"
               >
                 {isEditMode ? 'บันทึกการแก้ไข' : 'บันทึกข้อมูล'}
               </button>
-            </form>
+            </div>
           </div>
         </div>
       )}
