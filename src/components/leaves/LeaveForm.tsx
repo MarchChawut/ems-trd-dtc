@@ -114,10 +114,12 @@ function calculateLeaveDaysNum(
     return Math.round((hours / 10) * 10) / 10;
   }
   if (isHalfDay) {
-    return 0.5;
+    return 0.4;
   }
   const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0)
   const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0)
   let count = 0;
   const current = new Date(start);
   while (current <= end) {
@@ -150,8 +152,8 @@ function formatLeaveDays(
     const dayEquiv = (Math.round((hours / 10) * 10) / 10).toFixed(1);
     return `${dayEquiv} วัน`;
   }
-  if (isHalfDay || days === 0.5) {
-    return "0.5 วัน";
+  if (isHalfDay || days === 0.4) {
+    return "0.4 วัน";
   }
   // แสดงทศนิยม 1 ตำแหน่ง
   if (days % 1 !== 0) {
