@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sanitizeInput } from '@/lib/security';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
 /**
@@ -72,6 +72,24 @@ export async function PATCH(
           message: 'ไม่พบงาน',
         },
         { status: 404 }
+      );
+    }
+
+    // ตรวจสอบสิทธิ์: เฉพาะ assignee หรือ manager+ เท่านั้นที่อัปเดตได้
+    const currentUser = authResult.user!;
+    if (existingTask.assigneeId !== currentUser.id && !isManagerOrAbove(currentUser.role)) {
+      logger.warn('Forbidden task update attempt', {
+        userId: currentUser.id,
+        taskId,
+        assigneeId: existingTask.assigneeId,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'คุณไม่มีสิทธิ์อัปเดตงานนี้',
+        },
+        { status: 403 }
       );
     }
 
@@ -238,6 +256,23 @@ export async function DELETE(
           message: 'ไม่พบงาน',
         },
         { status: 404 }
+      );
+    }
+
+    // ตรวจสอบสิทธิ์: เฉพาะ manager+ เท่านั้นที่ลบงานได้ (assignee ลบงานตัวเองไม่ได้)
+    const currentUser = authResult.user!;
+    if (!isManagerOrAbove(currentUser.role)) {
+      logger.warn('Forbidden task delete attempt', {
+        userId: currentUser.id,
+        taskId,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'เฉพาะผู้จัดการเท่านั้นที่ลบงานได้',
+        },
+        { status: 403 }
       );
     }
 

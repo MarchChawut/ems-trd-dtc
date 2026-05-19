@@ -8,6 +8,7 @@
 
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { randomBytes, randomInt } from 'node:crypto';
 
 // ============================================
 // การตั้งค่าความปลอดภัย
@@ -126,6 +127,56 @@ export const createLeaveSchema = z.object({
 }, {
   message: 'วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น',
   path: ['endDate'],
+});
+
+// ============================================
+// Schemas สำหรับ master data (positions, departments, ฯลฯ)
+// ============================================
+
+/** Numeric ID schema (สำหรับ path/query params ที่เป็น ID ของ master data) */
+export const idSchema = z.coerce
+  .number()
+  .int('ID ต้องเป็นจำนวนเต็ม')
+  .positive('ID ต้องเป็นค่าบวก');
+
+/** ใช้ร่วม master data ที่มีโครงสร้างเหมือนกัน: positions, departments */
+export const masterDataSchema = z.object({
+  name: z
+    .string()
+    .min(1, 'กรุณาระบุชื่อ')
+    .max(100, 'ชื่อต้องไม่เกิน 100 ตัวอักษร'),
+  description: z.string().max(255, 'คำอธิบายต้องไม่เกิน 255 ตัวอักษร').nullable().optional(),
+  order: z.number().int().min(0).max(9999).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updateMasterDataSchema = masterDataSchema.partial().extend({
+  id: idSchema,
+});
+
+/** PositionSecond มี field พิเศษ hasLevel/maxLevel */
+export const positionSecondSchema = masterDataSchema.extend({
+  hasLevel: z.boolean().optional(),
+  maxLevel: z.number().int().min(1).max(20).nullable().optional(),
+});
+
+export const updatePositionSecondSchema = positionSecondSchema.partial().extend({
+  id: idSchema,
+});
+
+/** Leave rule schema */
+export const leaveRuleSchema = z.object({
+  name: z.string().min(1).max(100),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, 'รูปแบบเวลาต้องเป็น HH:MM'),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/, 'รูปแบบเวลาต้องเป็น HH:MM'),
+  fullDayHours: z.number().positive().max(24).optional(),
+  halfDayHours: z.number().positive().max(24).optional(),
+  maxConsecutiveDays: z.number().int().min(1).max(365).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updateLeaveRuleSchema = leaveRuleSchema.partial().extend({
+  id: idSchema,
 });
 
 // ============================================
@@ -260,19 +311,60 @@ export function getLoginAttempts(identifier: string): { count: number; remaining
 // ============================================
 
 /**
- * ฟังก์ชันสำหรับสร้าง random token
- * @param length - ความยาวของ token
- * @returns {string} token ที่สร้างขึ้น
+ * ฟังก์ชันสำหรับสร้าง random token (cryptographically secure)
+ * ใช้สำหรับ session tokens, CSRF tokens, ฯลฯ
+ * @param length - ความยาวของ token (default 32)
+ * @returns {string} token แบบ URL-safe base64
  */
 export function generateSecureToken(length: number = 32): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let token = '';
-  
-  for (let i = 0; i < length; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  // randomBytes ส่งคืน base64 ที่ยาวกว่า input ~33% → ตัดให้ได้ length ตามที่ต้องการ
+  const bytes = Math.ceil((length * 3) / 4);
+  return randomBytes(bytes)
+    .toString('base64url')
+    .slice(0, length);
+}
+
+/**
+ * สร้างรหัสผ่านชั่วคราวแบบสุ่ม (อ่านง่าย, จดง่าย)
+ * รับประกันมี: ตัวพิมพ์ใหญ่ 1, ตัวพิมพ์เล็ก 1, ตัวเลข 1, ตัวพิเศษ 1
+ * ไม่มีอักษรที่สับสน: I, l, 1, O, 0
+ *
+ * @param length - ความยาว (default 16, ขั้นต่ำ 12)
+ * @returns รหัสผ่านชั่วคราว — ใช้ครั้งเดียว ผู้ใช้ควรเปลี่ยนทันที
+ */
+export function generateRandomPassword(length: number = 16): string {
+  if (length < 12) {
+    throw new Error('Password length must be at least 12 characters');
   }
-  
-  return token;
+
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const digit = '23456789';
+  const special = '!@#$%&*+=?';
+  const all = upper + lower + digit + special;
+
+  // รับประกันมีอย่างน้อย 1 ตัวจากทุกประเภท
+  const required = [
+    upper[randomInt(0, upper.length)],
+    lower[randomInt(0, lower.length)],
+    digit[randomInt(0, digit.length)],
+    special[randomInt(0, special.length)],
+  ];
+
+  // เติมที่เหลือ
+  const remaining: string[] = [];
+  for (let i = required.length; i < length; i++) {
+    remaining.push(all[randomInt(0, all.length)]);
+  }
+
+  // Fisher-Yates shuffle เพื่อสุ่มตำแหน่ง required chars
+  const chars = [...required, ...remaining];
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(0, i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+
+  return chars.join('');
 }
 
 /**

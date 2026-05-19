@@ -11,7 +11,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { logger } from '@/lib/logger'
+import { logger } from '@/lib/logger';
+import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 
 interface HealthStatus {
   status: 'healthy' | 'unhealthy' | 'degraded';
@@ -91,13 +92,13 @@ function checkMemory(): HealthStatus['checks']['memory'] {
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const detailed = searchParams.get('detailed') === 'true';
-  
+
   try {
-    // Basic health check - ตรวจสอบ database เท่านั้น
+    // Basic health check (สาธารณะ — สำหรับ load balancer)
+    // ส่งคืนแค่ status + timestamp — ไม่เปิดเผยข้อมูลระบบ
     const dbCheck = await checkDatabase();
-    
+
     if (!detailed) {
-      // Simple response for load balancers
       if (dbCheck.status === 'healthy') {
         return NextResponse.json(
           { status: 'healthy', timestamp: new Date().toISOString() },
@@ -110,8 +111,20 @@ export async function GET(request: NextRequest) {
         );
       }
     }
-    
-    // Detailed health check
+
+    // Detailed health check — เปิดเผยข้อมูลระบบ (version, memory, latency)
+    // ต้องเป็น manager+ เท่านั้น เพื่อป้องกัน reconnaissance
+    const authResult = await requireAuth(request);
+    if (!authResult.success || !isManagerOrAbove(authResult.user!.role)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'รายละเอียดสถานะระบบเฉพาะผู้จัดการขึ้นไป',
+        },
+        { status: 403 }
+      );
+    }
     const memoryCheck = checkMemory();
     const uptime = Math.floor((Date.now() - START_TIME) / 1000);
     

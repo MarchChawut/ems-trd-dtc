@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, invalidateSessionCache } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import { cookies } from 'next/headers';
 
@@ -33,9 +33,10 @@ export async function POST(request: NextRequest) {
         where: { token },
         data: { isValid: false },
       });
-      
-      // ลบ cookie
+
+      // ลบ cookie + cache
       cookieStore.delete('session_token');
+      invalidateSessionCache(token);
     }
     
     return NextResponse.json({

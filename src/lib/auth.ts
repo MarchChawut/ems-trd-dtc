@@ -21,6 +21,71 @@ interface AuthResult {
   status?: number;
 }
 
+// ============================================================
+// Session Cache (in-memory, short TTL)
+// ============================================================
+// 60 วินาทีพอที่จะลด DB round-trip บน burst traffic
+// แต่สั้นพอที่ disabled accounts จะ revoked เร็ว
+const SESSION_CACHE_TTL_MS = 60_000;
+const SESSION_CACHE_MAX = 5000;
+
+interface CachedSession {
+  user: SessionUser;
+  expiresAt: number;       // timestamp ที่ session หมดอายุจริงใน DB
+  cachedAt: number;        // timestamp ที่ cache entry นี้สร้าง
+}
+
+const sessionCache = new Map<string, CachedSession>();
+
+function cacheGet(token: string): SessionUser | null {
+  const entry = sessionCache.get(token);
+  if (!entry) return null;
+
+  const now = Date.now();
+
+  // หมดอายุ cache → ลบทิ้ง, ให้ caller ไป query DB ใหม่
+  if (now - entry.cachedAt > SESSION_CACHE_TTL_MS) {
+    sessionCache.delete(token);
+    return null;
+  }
+
+  // Session DB หมดอายุไปแล้ว → ลบ cache, ให้ DB query เป็นคนจัดการ flag
+  if (now > entry.expiresAt) {
+    sessionCache.delete(token);
+    return null;
+  }
+
+  return entry.user;
+}
+
+function cacheSet(token: string, user: SessionUser, expiresAt: Date): void {
+  // ถ้าเต็ม → ลบ entry ที่เก่าที่สุด (FIFO)
+  if (sessionCache.size >= SESSION_CACHE_MAX) {
+    const oldestKey = sessionCache.keys().next().value;
+    if (oldestKey) sessionCache.delete(oldestKey);
+  }
+
+  sessionCache.set(token, {
+    user,
+    expiresAt: expiresAt.getTime(),
+    cachedAt: Date.now(),
+  });
+}
+
+/**
+ * ลบ entry ออกจาก cache (ใช้ตอน logout / role/active เปลี่ยน)
+ */
+export function invalidateSessionCache(token: string): void {
+  sessionCache.delete(token);
+}
+
+/**
+ * ล้าง cache ทั้งหมด (ใช้ตอน global key rotation, security incident)
+ */
+export function clearSessionCache(): void {
+  sessionCache.clear();
+}
+
 /**
  * ฟังก์ชันสำหรับตรวจสอบการเข้าสู่ระบบจาก request
  * @param request - NextRequest object
@@ -38,7 +103,7 @@ export async function requireAuth(request: NextRequest): Promise<AuthResult> {
     // ดึง token จาก cookie
     const cookieStore = await cookies();
     const token = cookieStore.get('session_token')?.value;
-    
+
     if (!token) {
       return {
         success: false,
@@ -47,7 +112,13 @@ export async function requireAuth(request: NextRequest): Promise<AuthResult> {
         status: 401,
       };
     }
-    
+
+    // ลอง cache ก่อน — เลี่ยง DB hit บน burst traffic
+    const cached = cacheGet(token);
+    if (cached) {
+      return { success: true, user: cached };
+    }
+
     // ค้นหา session จากฐานข้อมูล
     const session = await prisma.session.findUnique({
       where: { token },
@@ -57,6 +128,7 @@ export async function requireAuth(request: NextRequest): Promise<AuthResult> {
     // ตรวจสอบว่า session มีอยู่และยังใช้งานได้
     if (!session || !session.isValid) {
       cookieStore.delete('session_token');
+      invalidateSessionCache(token);
       return {
         success: false,
         error: 'INVALID_SESSION',
@@ -64,16 +136,17 @@ export async function requireAuth(request: NextRequest): Promise<AuthResult> {
         status: 401,
       };
     }
-    
+
     // ตรวจสอบว่า session หมดอายุหรือไม่
     if (new Date() > session.expiresAt) {
       await prisma.session.update({
         where: { id: session.id },
         data: { isValid: false },
       });
-      
+
       cookieStore.delete('session_token');
-      
+      invalidateSessionCache(token);
+
       return {
         success: false,
         error: 'SESSION_EXPIRED',
@@ -94,12 +167,16 @@ export async function requireAuth(request: NextRequest): Promise<AuthResult> {
     
     // ส่งข้อมูลผู้ใช้กลับไป (ไม่รวมรหัสผ่าน)
     const { password, ...userWithoutPassword } = session.user;
-    
+    const user = userWithoutPassword as SessionUser;
+
+    // เก็บใน cache เพื่อ request ถัดไป
+    cacheSet(token, user, session.expiresAt);
+
     return {
       success: true,
-      user: userWithoutPassword as SessionUser,
+      user,
     };
-    
+
   } catch (error) {
     console.error('Auth check error:', error);
     return {
@@ -195,14 +272,21 @@ export async function validateSession(): Promise<AuthResult> {
         status: 401,
       };
     }
-    
+
+    // ลอง cache ก่อน
+    const cached = cacheGet(token);
+    if (cached) {
+      return { success: true, user: cached };
+    }
+
     const session = await prisma.session.findUnique({
       where: { token },
       include: { user: true },
     });
-    
+
     if (!session || !session.isValid) {
       cookieStore.delete('session_token');
+      invalidateSessionCache(token);
       return {
         success: false,
         error: 'INVALID_SESSION',
@@ -210,15 +294,16 @@ export async function validateSession(): Promise<AuthResult> {
         status: 401,
       };
     }
-    
+
     if (new Date() > session.expiresAt) {
       await prisma.session.update({
         where: { id: session.id },
         data: { isValid: false },
       });
-      
+
       cookieStore.delete('session_token');
-      
+      invalidateSessionCache(token);
+
       return {
         success: false,
         error: 'SESSION_EXPIRED',
@@ -226,7 +311,7 @@ export async function validateSession(): Promise<AuthResult> {
         status: 401,
       };
     }
-    
+
     if (!session.user.isActive) {
       return {
         success: false,
@@ -235,14 +320,16 @@ export async function validateSession(): Promise<AuthResult> {
         status: 403,
       };
     }
-    
+
     const { password, ...userWithoutPassword } = session.user;
-    
+    const user = userWithoutPassword as SessionUser;
+    cacheSet(token, user, session.expiresAt);
+
     return {
       success: true,
-      user: userWithoutPassword as SessionUser,
+      user,
     };
-    
+
   } catch (error) {
     console.error('Validate session error:', error);
     return {

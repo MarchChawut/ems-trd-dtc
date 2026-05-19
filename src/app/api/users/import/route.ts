@@ -8,7 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
-import { hashPassword } from '@/lib/security';
+import { hashPassword, generateRandomPassword } from '@/lib/security';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
 
 /**
@@ -94,6 +95,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Rate limit: import เป็น heavy operation — จำกัด 5 ครั้ง / 15 นาที ต่อ user
+    const rl = checkRateLimit(
+      `import:user-${authResult.user!.id}`,
+      5,
+      15 * 60_000,
+    );
+    if (!rl.allowed) {
+      return rateLimitResponse(rl, 'นำเข้าได้สูงสุด 5 ครั้งต่อ 15 นาที');
+    }
+
     // อ่านข้อมูลจาก form
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -159,16 +170,16 @@ export async function POST(request: NextRequest) {
     const roleIndex = headers.indexOf('role');
     const departmentIndex = headers.indexOf('department');
 
-    // รหัสผ่านเริ่มต้นสำหรับพนักงานที่ import
-    const defaultPassword = await hashPassword('password123');
-
     // ตัวเลือก role ที่ valid
     const validRoles = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'HR'];
 
+    // สร้างรหัสผ่านชั่วคราวต่อ user — ส่งคืนใน response เพื่อให้ admin แจ้งพนักงาน
+    // ⚠️ admin ต้องแจ้งผ่านช่องทางที่ปลอดภัย + บังคับเปลี่ยนทันที
     const results = {
       imported: 0,
       skipped: 0,
       errors: [] as string[],
+      credentials: [] as { username: string; tempPassword: string }[],
     };
 
     // ประมวลผลแต่ละแถว
@@ -224,13 +235,17 @@ export async function POST(request: NextRequest) {
         const names = name.split(' ');
         const avatar = (names[0][0] + (names[1]?.[0] || '')).toUpperCase();
 
+        // สร้างรหัสผ่านชั่วคราวเฉพาะของ user คนนี้
+        const tempPassword = generateRandomPassword(16);
+        const hashedPassword = await hashPassword(tempPassword);
+
         // สร้างผู้ใช้ใหม่
         await prisma.user.create({
           data: {
             name,
             email,
             username,
-            password: defaultPassword,
+            password: hashedPassword,
             role: role as any,
             department: department || null,
             avatar: avatar || name[0],
@@ -239,15 +254,26 @@ export async function POST(request: NextRequest) {
         });
 
         results.imported++;
+        results.credentials.push({ username, tempPassword });
       } catch (error) {
         results.errors.push(`แถวที่ ${i + 1}: ${error instanceof Error ? error.message : 'เกิดข้อผิดพลาด'}`);
       }
     }
 
+    logger.info('User import completed', {
+      imported: results.imported,
+      skipped: results.skipped,
+      errorCount: results.errors.length,
+      // ❗ ไม่ log credentials field
+    });
+
     return NextResponse.json({
       success: true,
       data: results,
       message: `Import สำเร็จ: ${results.imported} รายการ, ข้าม: ${results.skipped} รายการ`,
+      warning: results.imported > 0
+        ? '⚠️ รหัสผ่านชั่วคราวอยู่ใน data.credentials — แจ้งพนักงานผ่านช่องทางที่ปลอดภัยและให้เปลี่ยนรหัสทันที (รหัสนี้จะไม่แสดงอีก)'
+        : undefined,
     });
 
   } catch (error) {
