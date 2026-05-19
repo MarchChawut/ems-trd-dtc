@@ -1,0 +1,174 @@
+// ============================================================
+// EMS V.2.0 — Vault DB Schema
+// ============================================================
+//
+// Runs on a SEPARATE MariaDB container on the same Synology NAS.
+// Network: internal-only namespace; port 3306 NOT exposed.
+// Only the Vault service connects to this DB.
+// The Main Next.js app NEVER connects directly — always through Vault HTTPS API.
+//
+// Cross-DB references:
+//   - identities.employeeCode  ──logical link──  Main.users.employee_code
+//   - No FK enforcement across DBs (Prisma doesn't support cross-DB FKs).
+//   - Integrity maintained by application logic + reconciliation job.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./node_modules/.prisma/vault-client"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("VAULT_DATABASE_URL")
+}
+
+// ============================================================
+// Model: Identity — encrypted PII for one employee
+// ============================================================
+//
+// Storage layout for every `enc*` Bytes column:
+//   [IV: 12 bytes][AUTH_TAG: 16 bytes][CIPHERTEXT: variable]
+// (See docs/v2.0/crypto.ts for encoding details.)
+//
+// `wrappedDek` is the per-record DEK encrypted under the master KEK.
+// All `enc*` fields in a single row use the SAME DEK
+// (envelope encryption, one wrap per record — efficient + supports crypto-shred).
+//
+// If `wrappedDek` is empty (zero bytes), this record has been crypto-shredded
+// (PDPA right-to-erasure). Ciphertexts remain on disk but are permanently
+// unrecoverable. `shreddedAt` and `shreddedReason` are populated.
+model Identity {
+  id             Int      @id @default(autoincrement())
+  employeeCode   String   @unique @db.VarChar(20)  // links to Main.users.employee_code
+
+  // Per-record DEK, encrypted with KEK
+  wrappedDek     Bytes
+
+  // Which KEK version wrapped this DEK (for key rotation)
+  keyVersion     Int      @default(1)
+
+  // ⭐ Encrypted PII fields (all use the same DEK)
+  encPrefix      Bytes?   // คำนำหน้า — "นาย", "น.ส.", etc.
+  encName        Bytes?   // ชื่อ
+  encSurname     Bytes?   // นามสกุล
+  encPhone       Bytes?   // เบอร์โทร
+  encBirthday    Bytes?   // ISO date string encrypted
+  encAddress     Bytes?   // ที่อยู่
+  encEmail       Bytes?   // อีเมล
+  encProfileImg  Bytes?   // URL/path string (NOT the image binary itself)
+
+  // Searchable hashes (HMAC-SHA256 with pepper) for lookup without decryption
+  phoneHash      String?  @unique @db.VarChar(64)
+  emailHash      String?  @unique @db.VarChar(64)
+
+  // Crypto-shred metadata (PDPA right-to-erasure)
+  shreddedAt     DateTime?
+  shreddedReason String?  @db.VarChar(255)
+  shreddedBy     Int?     // actor user id from Main DB
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([shreddedAt])
+  @@map("identities")
+}
+
+// ============================================================
+// Model: VaultAuditLog — every access logged
+// ============================================================
+//
+// Retention policy (per ADR §7):
+//   - Hot:  while employee is active
+//   - Warm: 2 years after employee leaves
+//   - Cold: indefinitely (employee lifetime)
+//   - Deleted: only via right-to-erasure (alongside Identity shred)
+//
+// Audit log itself contains NO PII — only employeeCode (token).
+// Safe to retain forever from a privacy standpoint.
+model VaultAuditLog {
+  id            Int          @id @default(autoincrement())
+
+  // Who performed the action
+  actorUserId   Int                                     // Main.users.id
+  actorCode     String       @db.VarChar(20)            // employeeCode of actor
+  actorRole     String       @db.VarChar(20)            // "SUPER_ADMIN" | "ADMIN" | "SYSTEM"
+  ipAddress     String       @db.VarChar(45)
+  userAgent     String?      @db.Text
+
+  // What was done
+  action        AuditAction
+  targetCode    String       @db.VarChar(20)            // whose data
+  fields        String       @db.Text                   // JSON array: ["name","phone"]
+  reason        String?      @db.VarChar(500)           // required for REVEAL
+
+  // Result
+  success       Boolean
+  errorCode     String?      @db.VarChar(50)
+
+  createdAt     DateTime     @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([targetCode, createdAt])
+  @@index([action, createdAt])
+  @@map("vault_audit_log")
+}
+
+// ============================================================
+// Model: KeyVersion — KEK rotation history
+// ============================================================
+//
+// When the KEK is rotated, all wrappedDek values must be re-wrapped under the
+// new KEK. This table tracks which version is currently active and which
+// retired.
+//
+// Rotation procedure:
+//   1. Generate new KEK (v2), store as new env var alongside v1
+//   2. Re-wrap all DEKs: read each Identity, unwrapKey(old KEK) → wrapKey(new KEK)
+//   3. Update identity.keyVersion = 2
+//   4. Retire old KEK: set retiredAt, remove from env after grace period
+model KeyVersion {
+  id          Int       @id @default(autoincrement())
+  version     Int       @unique          // 1, 2, 3...
+  algorithm   String    @db.VarChar(50)  // "aes-256-gcm"
+  activatedAt DateTime
+  retiredAt   DateTime?
+  notes       String?   @db.VarChar(500)
+
+  @@map("key_versions")
+}
+
+// ============================================================
+// Model: RevealToken — short-lived tokens for SUPER_ADMIN reveal
+// ============================================================
+//
+// Issued after step-up auth succeeds. Bound to (actor, targetCode).
+// Used once or for a short TTL (5 min) to fetch unmasked PII for a specific
+// employee. Audited.
+model RevealToken {
+  id           Int      @id @default(autoincrement())
+  token        String   @unique @db.VarChar(128)
+  actorUserId  Int
+  targetCode   String   @db.VarChar(20)
+  fields       String   @db.Text                       // JSON array
+  expiresAt    DateTime
+  usedAt       DateTime?
+  ipAddress    String   @db.VarChar(45)
+
+  createdAt    DateTime @default(now())
+
+  @@index([actorUserId, expiresAt])
+  @@index([expiresAt])
+  @@map("reveal_tokens")
+}
+
+// ============================================================
+// Enums
+// ============================================================
+enum AuditAction {
+  CREATE      // identity created
+  UPDATE      // encrypted field(s) modified
+  REVEAL      // SUPER_ADMIN viewed plaintext (highest sensitivity)
+  SEARCH      // lookup by phoneHash/emailHash
+  SHRED       // crypto-shred (PDPA right-to-erasure)
+  KEY_ROTATE  // DEK re-wrapped under new KEK
+}
