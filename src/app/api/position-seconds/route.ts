@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
 
     const positionSeconds = await prisma.positionSecond.findMany({
       orderBy: [{ isActive: 'desc' }, { order: 'asc' }, { name: 'asc' }],
+      take: 500,
     });
 
     return NextResponse.json({

@@ -10,6 +10,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import {
+  masterDataSchema,
+  updateMasterDataSchema,
+  idSchema,
+  sanitizeInput,
+} from '@/lib/security';
 
 /**
  * GET /api/departments
@@ -27,6 +33,7 @@ export async function GET(request: NextRequest) {
 
     const departments = await prisma.department.findMany({
       orderBy: [{ isActive: 'desc' }, { order: 'asc' }, { name: 'asc' }],
+      take: 500,
     });
 
     return NextResponse.json({
@@ -74,13 +81,25 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    
+    const parsed = masterDataSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'VALIDATION_ERROR',
+          message: 'ข้อมูลไม่ถูกต้อง',
+          details: parsed.error.flatten().fieldErrors,
+        },
+        { status: 400 }
+      );
+    }
+
     const department = await prisma.department.create({
       data: {
-        name: body.name,
-        description: body.description || null,
-        order: body.order || 0,
-        isActive: body.isActive ?? true,
+        name: sanitizeInput(parsed.data.name),
+        description: parsed.data.description ? sanitizeInput(parsed.data.description) : null,
+        order: parsed.data.order ?? 0,
+        isActive: parsed.data.isActive ?? true,
       },
     });
 
@@ -130,21 +149,28 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, ...updateData } = body;
-
-    if (!id) {
+    const parsed = updateMasterDataSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
         {
           success: false,
-          error: 'INVALID_INPUT',
-          message: 'กรุณาระบุ ID ของแผนก',
+          error: 'VALIDATION_ERROR',
+          message: 'ข้อมูลไม่ถูกต้อง',
+          details: parsed.error.flatten().fieldErrors,
         },
         { status: 400 }
       );
     }
 
+    const { id, name, description, ...rest } = parsed.data;
+    const updateData: Record<string, unknown> = { ...rest };
+    if (name !== undefined) updateData.name = sanitizeInput(name);
+    if (description !== undefined) {
+      updateData.description = description ? sanitizeInput(description) : null;
+    }
+
     const department = await prisma.department.update({
-      where: { id: parseInt(id) },
+      where: { id },
       data: updateData,
     });
 
@@ -194,21 +220,20 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-
-    if (!id) {
+    const idParsed = idSchema.safeParse(searchParams.get('id'));
+    if (!idParsed.success) {
       return NextResponse.json(
         {
           success: false,
           error: 'INVALID_INPUT',
-          message: 'กรุณาระบุ ID ของแผนก',
+          message: 'รหัสแผนกไม่ถูกต้อง',
         },
         { status: 400 }
       );
     }
 
     await prisma.department.delete({
-      where: { id: parseInt(id) },
+      where: { id: idParsed.data },
     });
 
     return NextResponse.json({

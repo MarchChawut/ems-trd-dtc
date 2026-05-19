@@ -290,3 +290,74 @@ export function formatSignatureName(
     parenName: military ? safeName : `${safePrefix}${safeName}`,
   };
 }
+
+// ============================================================
+// Pagination helpers
+// ============================================================
+
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+export interface PaginationParams {
+  page: number;        // เริ่มจาก 1
+  limit: number;       // จำนวนรายการต่อหน้า
+  skip: number;        // สำหรับ Prisma
+  take: number;        // สำหรับ Prisma
+}
+
+export interface PaginationMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
+/**
+ * แปลง URL search params เป็น pagination params ที่ปลอดภัย
+ *
+ * - clamp page อย่างต่ำ 1
+ * - clamp limit ระหว่าง 1 ถึง MAX_PAGE_SIZE
+ * - ถ้า invalid (NaN, negative) → fallback default
+ */
+export function getPaginationParams(
+  searchParams: URLSearchParams,
+  defaults: { limit?: number; max?: number } = {},
+): PaginationParams {
+  const defLimit = defaults.limit ?? DEFAULT_PAGE_SIZE;
+  const maxLimit = defaults.max ?? MAX_PAGE_SIZE;
+
+  const rawPage = parseInt(searchParams.get('page') ?? '1', 10);
+  const rawLimit = parseInt(searchParams.get('limit') ?? String(defLimit), 10);
+
+  const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0
+    ? Math.min(rawLimit, maxLimit)
+    : defLimit;
+
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+    take: limit,
+  };
+}
+
+/**
+ * สร้าง meta object สำหรับ response
+ */
+export function buildPaginationMeta(
+  total: number,
+  params: PaginationParams,
+): PaginationMeta {
+  const totalPages = Math.max(1, Math.ceil(total / params.limit));
+  return {
+    total,
+    page: params.page,
+    limit: params.limit,
+    totalPages,
+    hasNext: params.page < totalPages,
+    hasPrev: params.page > 1,
+  };
+}

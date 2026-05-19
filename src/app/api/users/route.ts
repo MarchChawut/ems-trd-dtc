@@ -10,6 +10,8 @@ import { prisma } from '@/lib/prisma';
 import { createUserSchema, hashPassword, generateAvatarInitials, sanitizeInput } from '@/lib/security';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { getPaginationParams, buildPaginationMeta } from '@/lib/utils';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 
 /**
  * GET /api/users
@@ -45,6 +47,7 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get('role');
     const department = searchParams.get('department');
     const isActive = searchParams.get('isActive');
+    const pagination = getPaginationParams(searchParams);
 
     // สร้าง where clause
     const where: any = {};
@@ -69,40 +72,42 @@ export async function GET(request: NextRequest) {
       where.isActive = isActive === 'true';
     }
 
-    // ดึงข้อมูลผู้ใช้
-    const users = await prisma.user.findMany({
-      where,
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        prefix: true,
-        name: true,
-        role: true,
-        department: true,
-        division: true,
-        position: true,
-        positionSecond: true,
-        positionLevel: true,
-        phone: true,
-        birthday: true,
-        address: true,
-        avatar: true,
-        profileImage: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // นับจำนวนผู้ใช้ทั้งหมด
-    const total = await prisma.user.count({ where });
+    // ดึงข้อมูลผู้ใช้ + นับ total พร้อมกัน (ลด round-trip)
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          prefix: true,
+          name: true,
+          role: true,
+          department: true,
+          division: true,
+          position: true,
+          positionSecond: true,
+          positionLevel: true,
+          phone: true,
+          birthday: true,
+          address: true,
+          avatar: true,
+          profileImage: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+      prisma.user.count({ where }),
+    ]);
 
     return NextResponse.json({
       success: true,
       data: users,
-      meta: { total },
+      meta: buildPaginationMeta(total, pagination),
     });
 
   } catch (error) {
@@ -161,6 +166,10 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
+
+    // Rate limit: 30 ครั้ง / 1 นาที ต่อ user (ป้องกัน spam/bot)
+    const rl = checkRateLimit(`create-user:user-${authResult.user!.id}`, 30, 60_000);
+    if (!rl.allowed) return rateLimitResponse(rl);
 
     // อ่านข้อมูลจาก request body
     const body = await request.json();

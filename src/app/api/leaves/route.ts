@@ -10,6 +10,8 @@ import { prisma } from '@/lib/prisma';
 import { createLeaveSchema, sanitizeInput } from '@/lib/security';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { getPaginationParams, buildPaginationMeta } from '@/lib/utils';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 
 /**
  * GET /api/leaves
@@ -44,6 +46,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
     const type = searchParams.get('type');
     const userId = searchParams.get('userId');
+    const pagination = getPaginationParams(searchParams, { limit: 50, max: 200 });
 
     // สร้าง where clause
     const where: any = {};
@@ -63,30 +66,36 @@ export async function GET(request: NextRequest) {
       where.type = type;
     }
 
-    // ดึงข้อมูลการลา
-    const leaves = await prisma.leave.findMany({
-      where,
-      include: {
-        user: {
-          select: {
-            id: true,
-            prefix: true,
-            name: true,
-            avatar: true,
-            department: true,
-            division: true,
-            position: true,
-            phone: true,
-            address: true,
+    // ดึงข้อมูลการลา + นับ total พร้อมกัน
+    const [leaves, total] = await Promise.all([
+      prisma.leave.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              prefix: true,
+              name: true,
+              avatar: true,
+              department: true,
+              division: true,
+              position: true,
+              phone: true,
+              address: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+      prisma.leave.count({ where }),
+    ]);
 
     return NextResponse.json({
       success: true,
       data: leaves,
+      meta: buildPaginationMeta(total, pagination),
     });
 
   } catch (error) {
@@ -134,6 +143,10 @@ export async function POST(request: NextRequest) {
     }
 
     const currentUser = authResult.user!;
+
+    // Rate limit: 20 ครั้ง / 1 นาที ต่อ user (ใบลาไม่ควรสร้างเร็ว)
+    const rl = checkRateLimit(`create-leave:user-${currentUser.id}`, 20, 60_000);
+    if (!rl.allowed) return rateLimitResponse(rl);
 
     // อ่านข้อมูลจาก request body
     const body = await request.json();

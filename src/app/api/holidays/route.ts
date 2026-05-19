@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
     const holidays = await prisma.holiday.findMany({
       where,
       orderBy: { date: 'asc' },
+      take: 500,
     });
 
     return NextResponse.json({

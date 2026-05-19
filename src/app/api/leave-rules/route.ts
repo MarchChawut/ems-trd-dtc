@@ -9,6 +9,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import {
+  leaveRuleSchema,
+  updateLeaveRuleSchema,
+  idSchema,
+  sanitizeInput,
+} from '@/lib/security';
 
 /**
  * GET /api/leave-rules
@@ -26,6 +32,7 @@ export async function GET(request: NextRequest) {
 
     const rules = await prisma.leaveRule.findMany({
       orderBy: { createdAt: 'desc' },
+      take: 100,
     });
 
     // ถ้าไม่มีกฎ ให้สร้างกฎเริ่มต้น
@@ -94,16 +101,28 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    
+    const parsed = leaveRuleSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'VALIDATION_ERROR',
+          message: 'ข้อมูลกฎการลาไม่ถูกต้อง',
+          details: parsed.error.flatten().fieldErrors,
+        },
+        { status: 400 }
+      );
+    }
+
     const rule = await prisma.leaveRule.create({
       data: {
-        name: body.name || 'กฎการลา',
-        startTime: body.startTime || '08:30',
-        endTime: body.endTime || '16:30',
-        fullDayHours: body.fullDayHours || 8,
-        halfDayHours: body.halfDayHours || 4,
-        maxConsecutiveDays: body.maxConsecutiveDays || 30,
-        isActive: body.isActive ?? true,
+        name: sanitizeInput(parsed.data.name),
+        startTime: parsed.data.startTime,
+        endTime: parsed.data.endTime,
+        fullDayHours: parsed.data.fullDayHours ?? 8,
+        halfDayHours: parsed.data.halfDayHours ?? 4,
+        maxConsecutiveDays: parsed.data.maxConsecutiveDays ?? 30,
+        isActive: parsed.data.isActive ?? true,
       },
     });
 
@@ -154,21 +173,25 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, ...updateData } = body;
-
-    if (!id) {
+    const parsed = updateLeaveRuleSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
         {
           success: false,
-          error: 'INVALID_INPUT',
-          message: 'กรุณาระบุ ID ของกฎการลา',
+          error: 'VALIDATION_ERROR',
+          message: 'ข้อมูลกฎการลาไม่ถูกต้อง',
+          details: parsed.error.flatten().fieldErrors,
         },
         { status: 400 }
       );
     }
 
+    const { id, name, ...rest } = parsed.data;
+    const updateData: Record<string, unknown> = { ...rest };
+    if (name !== undefined) updateData.name = sanitizeInput(name);
+
     const rule = await prisma.leaveRule.update({
-      where: { id: parseInt(id) },
+      where: { id },
       data: updateData,
     });
 

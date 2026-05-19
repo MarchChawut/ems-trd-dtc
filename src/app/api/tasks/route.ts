@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma';
 import { createTaskSchema, sanitizeInput } from '@/lib/security';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 
 /**
  * GET /api/tasks
@@ -64,28 +65,41 @@ export async function GET(request: NextRequest) {
       where.assigneeId = parseInt(assigneeId);
     }
 
-    // ดึงข้อมูลงาน
-    const tasks = await prisma.task.findMany({
-      where,
-      include: {
-        column: true,
-        assignee: {
-          select: {
-            id: true,
-            name: true,
-            avatar: true,
+    // Safety cap: Kanban UI ต้องการโหลดทั้งหมด แต่จำกัดไม่ให้เกิน 1000 task
+    // (ป้องกัน DoS / memory exhaustion โดยไม่ break UX)
+    const MAX_TASKS = 1000;
+
+    // ดึงข้อมูลงาน + นับ total พร้อมกัน
+    const [tasks, total] = await Promise.all([
+      prisma.task.findMany({
+        where,
+        include: {
+          column: true,
+          assignee: {
+            select: {
+              id: true,
+              name: true,
+              avatar: true,
+            },
           },
         },
-      },
-      orderBy: [
-        { priority: 'desc' },
-        { createdAt: 'desc' },
-      ],
-    });
+        orderBy: [
+          { priority: 'desc' },
+          { createdAt: 'desc' },
+        ],
+        take: MAX_TASKS,
+      }),
+      prisma.task.count({ where }),
+    ]);
 
     return NextResponse.json({
       success: true,
       data: tasks,
+      meta: {
+        total,
+        returned: tasks.length,
+        truncated: total > MAX_TASKS,
+      },
     });
 
   } catch (error) {
@@ -131,6 +145,10 @@ export async function POST(request: NextRequest) {
         { status: authResult.status }
       );
     }
+
+    // Rate limit: 60 ครั้ง / 1 นาที (kanban อาจสร้าง task บ่อย)
+    const rl = checkRateLimit(`create-task:user-${authResult.user!.id}`, 60, 60_000);
+    if (!rl.allowed) return rateLimitResponse(rl);
 
     // อ่านข้อมูลจาก request body
     const body = await request.json();
