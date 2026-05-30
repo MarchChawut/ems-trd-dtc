@@ -9,17 +9,19 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { 
-  Users, 
-  Calendar, 
-  Layout, 
-  LogOut, 
+import {
+  Users,
+  Calendar,
+  Layout,
+  LogOut,
   CheckCircle,
   Briefcase,
   Menu,
   X,
   ChevronRight,
-  Loader2
+  Loader2,
+  Package,
+  Monitor,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SessionUser } from '@/types';
@@ -46,11 +48,23 @@ const menuItems = [
     icon: Calendar, 
     href: '/dashboard/leaves' 
   },
-  { 
-    id: 'employees', 
-    label: 'พนักงาน', 
-    icon: Users, 
-    href: '/dashboard/employees' 
+  {
+    id: 'employees',
+    label: 'พนักงาน',
+    icon: Users,
+    href: '/dashboard/employees',
+  },
+  {
+    id: 'supplies',
+    label: 'พัสดุ',
+    icon: Package,
+    href: '/dashboard/supplies',
+  },
+  {
+    id: 'assets',
+    label: 'ครุภัณฑ์',
+    icon: Monitor,
+    href: '/dashboard/assets',
   },
 ];
 

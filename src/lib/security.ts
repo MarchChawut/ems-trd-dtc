@@ -128,6 +128,85 @@ export const createLeaveSchema = z.object({
   path: ['endDate'],
 });
 
+/**
+ * Schema สำหรับตรวจสอบการสร้าง/อัปเดตหมวดหมู่พัสดุ
+ */
+export const createSupplyCategorySchema = z.object({
+  name: z.string().min(1, 'กรุณาระบุชื่อหมวดหมู่').max(100, 'ชื่อหมวดหมู่ต้องไม่เกิน 100 ตัวอักษร'),
+  description: z.string().max(255).optional().nullable(),
+  order: z.number().int().min(0).optional(),
+});
+
+/**
+ * Schema สำหรับตรวจสอบการสร้าง/อัปเดตพัสดุ
+ */
+export const createSupplySchema = z.object({
+  name: z.string().min(1, 'กรุณาระบุชื่อพัสดุ').max(200, 'ชื่อพัสดุต้องไม่เกิน 200 ตัวอักษร'),
+  type: z.enum(['STOCK', 'NON_STOCK']),
+  categoryId: z.number().int().positive().optional().nullable(),
+  unit: z.string().max(50).optional().nullable(),
+  minimumQuantity: z.number().int().min(0).optional(),
+  supplier: z.string().max(200).optional().nullable(),
+  unitPrice: z.number().min(0).optional().nullable(),
+  documentNumber: z.string().max(100).optional().nullable(),
+  documentUrl: z.string().max(500).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+});
+
+/**
+ * Schema สำหรับตรวจสอบการสร้างรายการเคลื่อนไหวพัสดุ
+ */
+export const createTransactionSchema = z.object({
+  supplyId: z.number().int().positive('กรุณาระบุพัสดุ'),
+  type: z.enum(['RECEIVE', 'ISSUE', 'RETURN', 'ADJUST']),
+  quantity: z.number().int().positive('จำนวนต้องมากกว่า 0'),
+  documentNumber: z.string().max(100).optional().nullable(),
+  documentUrl: z.string().max(500).optional().nullable(),
+  recipientName: z.string().max(200).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+});
+
+/**
+ * Schema สำหรับตรวจสอบการสร้าง/อัปเดตหมวดหมู่ครุภัณฑ์
+ */
+export const createAssetCategorySchema = z.object({
+  name: z.string().min(1, 'กรุณาระบุชื่อหมวดหมู่').max(100, 'ชื่อหมวดหมู่ต้องไม่เกิน 100 ตัวอักษร'),
+  description: z.string().max(255).optional().nullable(),
+  order: z.number().int().min(0).optional(),
+});
+
+/**
+ * Schema สำหรับตรวจสอบการสร้าง/อัปเดตครุภัณฑ์
+ */
+export const createAssetSchema = z.object({
+  name: z.string().min(1, 'กรุณาระบุชื่อครุภัณฑ์').max(200, 'ชื่อครุภัณฑ์ต้องไม่เกิน 200 ตัวอักษร'),
+  assetTag: z.string().max(50).optional().nullable(),
+  serialNumber: z.string().max(100).optional().nullable(),
+  model: z.string().max(100).optional().nullable(),
+  brand: z.string().max(100).optional().nullable(),
+  categoryId: z.number().int().positive().optional().nullable(),
+  status: z.enum(['AVAILABLE', 'IN_USE', 'IN_REPAIR', 'RETURNED', 'DISPOSED']).optional(),
+  condition: z.enum(['EXCELLENT', 'GOOD', 'FAIR', 'POOR', 'DAMAGED']).optional(),
+  acquisitionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  acquisitionCost: z.number().min(0).optional().nullable(),
+  documentNumber: z.string().max(100).optional().nullable(),
+  documentUrl: z.string().max(500).optional().nullable(),
+  location: z.string().max(200).optional().nullable(),
+  department: z.string().max(100).optional().nullable(),
+  imageUrl: z.string().max(500).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+});
+
+/**
+ * Schema สำหรับตรวจสอบการยืมครุภัณฑ์
+ */
+export const createCheckoutSchema = z.object({
+  assetId: z.number().int().positive('กรุณาระบุครุภัณฑ์'),
+  holderId: z.number().int().positive('กรุณาระบุผู้ยืม'),
+  expectedReturnAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+});
+
 // ============================================
 // การป้องกัน XSS (Cross-Site Scripting)
 // ============================================

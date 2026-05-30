@@ -447,3 +447,165 @@ export interface FormState<T = Record<string, unknown>> {
   errors: FormErrors;
   status: FormStatus;
 }
+
+// ============================================
+// Supply Types - ประเภทข้อมูลพัสดุ
+// ============================================
+
+export type SupplyType = 'STOCK' | 'NON_STOCK';
+export type TransactionType = 'RECEIVE' | 'ISSUE' | 'RETURN' | 'ADJUST';
+
+export interface SupplyCategory {
+  id: number;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  order: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Supply {
+  id: number;
+  name: string;
+  type: SupplyType;
+  categoryId: number | null;
+  category?: SupplyCategory | null;
+  unit: string | null;
+  currentQuantity: number;
+  minimumQuantity: number;
+  supplier: string | null;
+  unitPrice: number | null;
+  documentNumber: string | null;
+  documentUrl: string | null;
+  notes: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SupplyTransaction {
+  id: number;
+  supplyId: number;
+  supply?: Supply;
+  type: TransactionType;
+  quantity: number;
+  quantityBefore: number;
+  quantityAfter: number;
+  documentNumber: string | null;
+  documentUrl: string | null;
+  recipientName: string | null;
+  notes: string | null;
+  performedById: number;
+  performedBy?: Pick<User, 'id' | 'prefix' | 'name' | 'avatar'>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateSupplyInput {
+  name: string;
+  type: SupplyType;
+  categoryId?: number | null;
+  unit?: string | null;
+  minimumQuantity?: number;
+  supplier?: string | null;
+  unitPrice?: number | null;
+  documentNumber?: string | null;
+  documentUrl?: string | null;
+  notes?: string | null;
+}
+
+export interface CreateTransactionInput {
+  supplyId: number;
+  type: TransactionType;
+  quantity: number;
+  documentNumber?: string | null;
+  documentUrl?: string | null;
+  recipientName?: string | null;
+  notes?: string | null;
+}
+
+// ============================================
+// Asset Types - ประเภทข้อมูลครุภัณฑ์
+// ============================================
+
+export type AssetStatus = 'AVAILABLE' | 'IN_USE' | 'IN_REPAIR' | 'RETURNED' | 'DISPOSED';
+export type AssetCondition = 'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED';
+
+export interface AssetCategory {
+  id: number;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  order: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Asset {
+  id: number;
+  name: string;
+  assetTag: string | null;
+  serialNumber: string | null;
+  model: string | null;
+  brand: string | null;
+  categoryId: number | null;
+  category?: AssetCategory | null;
+  status: AssetStatus;
+  condition: AssetCondition;
+  currentHolderId: number | null;
+  currentHolder?: Pick<User, 'id' | 'prefix' | 'name' | 'avatar'> | null;
+  acquisitionDate: Date | string | null;
+  acquisitionCost: number | null;
+  documentNumber: string | null;
+  documentUrl: string | null;
+  location: string | null;
+  department: string | null;
+  imageUrl: string | null;
+  notes: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AssetCheckout {
+  id: number;
+  assetId: number;
+  asset?: Asset;
+  holderId: number;
+  holder?: Pick<User, 'id' | 'prefix' | 'name' | 'avatar' | 'department'>;
+  issuedById: number;
+  issuedBy?: Pick<User, 'id' | 'name' | 'avatar'>;
+  checkedOutAt: Date;
+  returnedAt: Date | null;
+  expectedReturnAt: Date | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateAssetInput {
+  name: string;
+  assetTag?: string | null;
+  serialNumber?: string | null;
+  model?: string | null;
+  brand?: string | null;
+  categoryId?: number | null;
+  status?: AssetStatus;
+  condition?: AssetCondition;
+  acquisitionDate?: string | null;
+  acquisitionCost?: number | null;
+  documentNumber?: string | null;
+  documentUrl?: string | null;
+  location?: string | null;
+  department?: string | null;
+  imageUrl?: string | null;
+  notes?: string | null;
+}
+
+export interface CreateCheckoutInput {
+  assetId: number;
+  holderId: number;
+  expectedReturnAt?: string | null;
+  notes?: string | null;
+}

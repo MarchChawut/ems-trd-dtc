@@ -40,6 +40,10 @@ model User {
   leaves    Leave[]  // รายการลาของผู้ใช้
   sessions  Session[] // Session สำหรับการเข้าสู่ระบบ
   loginAttempts LoginAttempt[] // ประวัติการพยายามเข้าสู่ระบบ
+  supplyTransactions SupplyTransaction[] @relation("TxPerformer")
+  checkoutsHeld      AssetCheckout[]     @relation("CheckoutHolder")
+  checkoutsIssued    AssetCheckout[]     @relation("CheckoutIssuer")
+  assetsHeld         Asset[]             @relation("AssetHolder")
   
   // timestamps
   createdAt DateTime @default(now())
@@ -301,4 +305,212 @@ enum LeaveStatus {
   PENDING   // รอพิจารณา
   APPROVED  // อนุมัติแล้ว
   REJECTED  // ไม่อนุมัติ
+}
+
+// ============================================
+// Enums - พัสดุ และ ครุภัณฑ์
+// ============================================
+
+// ประเภทพัสดุ
+enum SupplyType {
+  STOCK     // คงคลัง - ติดตามจำนวน
+  NON_STOCK // ไม่คงคลัง - จัดซื้อตรง ไม่ติดตามจำนวน
+}
+
+// ประเภทรายการเคลื่อนไหวพัสดุ (เฉพาะ STOCK)
+enum TransactionType {
+  RECEIVE // รับเข้า
+  ISSUE   // เบิกจ่าย
+  RETURN  // คืน
+  ADJUST  // ปรับยอด
+}
+
+// สถานะครุภัณฑ์
+enum AssetStatus {
+  AVAILABLE  // พร้อมใช้งาน
+  IN_USE     // ถูกใช้งานอยู่
+  IN_REPAIR  // ส่งซ่อม
+  RETURNED   // ส่งคืนคลัง
+  DISPOSED   // ตัดจำหน่าย
+}
+
+// สภาพครุภัณฑ์
+enum AssetCondition {
+  EXCELLENT // สภาพดีมาก
+  GOOD      // สภาพดี
+  FAIR      // สภาพพอใช้
+  POOR      // สภาพไม่ดี
+  DAMAGED   // เสียหาย
+}
+
+// ============================================
+// Model: SupplyCategory - หมวดหมู่พัสดุ
+// ============================================
+model SupplyCategory {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+
+  supplies    Supply[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, order])
+  @@map("supply_categories")
+}
+
+// ============================================
+// Model: Supply - พัสดุ (คงคลัง / ไม่คงคลัง)
+// ============================================
+model Supply {
+  id               Int             @id @default(autoincrement())
+  name             String          @db.VarChar(200)
+  type             SupplyType
+  categoryId       Int?
+  category         SupplyCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  // จำนวน (เฉพาะ STOCK)
+  unit             String?         @db.VarChar(50)
+  currentQuantity  Int             @default(0)   // อัปเดตด้วย $transaction
+  minimumQuantity  Int             @default(0)   // จำนวนขั้นต่ำ - สำหรับแจ้งเตือน
+
+  // ข้อมูลจัดซื้อ
+  supplier         String?         @db.VarChar(200)
+  unitPrice        Decimal?        @db.Decimal(12, 2)
+  documentNumber   String?         @db.VarChar(100)  // เลขที่เอกสารรับ
+  documentUrl      String?         @db.VarChar(500)  // URL ไฟล์ PDF แนบ
+
+  notes            String?         @db.Text
+  isActive         Boolean         @default(true)
+
+  transactions     SupplyTransaction[]
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([type, isActive])
+  @@index([categoryId])
+  @@map("supplies")
+}
+
+// ============================================
+// Model: SupplyTransaction - รายการเคลื่อนไหวพัสดุ (STOCK)
+// ============================================
+model SupplyTransaction {
+  id               Int             @id @default(autoincrement())
+  supplyId         Int
+  supply           Supply          @relation(fields: [supplyId], references: [id], onDelete: Cascade)
+
+  type             TransactionType
+  quantity         Int             // จำนวนที่เคลื่อนไหว
+  quantityBefore   Int             // ยอดก่อนทำรายการ
+  quantityAfter    Int             // ยอดหลังทำรายการ
+
+  documentNumber   String?         @db.VarChar(100)  // เลขที่เอกสาร
+  documentUrl      String?         @db.VarChar(500)  // URL ไฟล์ PDF แนบ
+  recipientName    String?         @db.VarChar(200)  // ชื่อผู้รับ (กรณีเบิก)
+  notes            String?         @db.Text
+
+  performedById    Int
+  performedBy      User            @relation("TxPerformer", fields: [performedById], references: [id], onDelete: Restrict)
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([supplyId, createdAt])
+  @@index([performedById])
+  @@map("supply_transactions")
+}
+
+// ============================================
+// Model: AssetCategory - หมวดหมู่ครุภัณฑ์
+// ============================================
+model AssetCategory {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+
+  assets      Asset[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, order])
+  @@map("asset_categories")
+}
+
+// ============================================
+// Model: Asset - ครุภัณฑ์
+// ============================================
+model Asset {
+  id               Int             @id @default(autoincrement())
+  name             String          @db.VarChar(200)
+  assetTag         String?         @unique @db.VarChar(50)   // รหัสครุภัณฑ์ เช่น 00193
+  serialNumber     String?         @db.VarChar(100)          // หมายเลขซีเรียล เช่น 7440-001-0003 (2/66)
+  model            String?         @db.VarChar(100)
+  brand            String?         @db.VarChar(100)
+  categoryId       Int?
+  category         AssetCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  status           AssetStatus     @default(AVAILABLE)
+  condition        AssetCondition  @default(GOOD)
+
+  // ผู้ครอบครองปัจจุบัน (denormalized เพื่อ query เร็ว)
+  currentHolderId  Int?
+  currentHolder    User?           @relation("AssetHolder", fields: [currentHolderId], references: [id], onDelete: SetNull)
+
+  // ข้อมูลการจัดซื้อ
+  acquisitionDate  DateTime?       @db.Date
+  acquisitionCost  Decimal?        @db.Decimal(12, 2)
+  documentNumber   String?         @db.VarChar(100)  // เลขที่หนังสือรับ
+  documentUrl      String?         @db.VarChar(500)  // URL ไฟล์ PDF แนบ
+
+  location         String?         @db.VarChar(200)
+  department       String?         @db.VarChar(100)
+  imageUrl         String?         @db.VarChar(500)  // รูปครุภัณฑ์
+  notes            String?         @db.Text
+  isActive         Boolean         @default(true)
+
+  checkouts        AssetCheckout[]
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([status, isActive])
+  @@index([categoryId])
+  @@index([currentHolderId])
+  @@map("assets")
+}
+
+// ============================================
+// Model: AssetCheckout - ประวัติยืม-คืนครุภัณฑ์
+// ============================================
+model AssetCheckout {
+  id               Int       @id @default(autoincrement())
+  assetId          Int
+  asset            Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  holderId         Int
+  holder           User      @relation("CheckoutHolder", fields: [holderId], references: [id], onDelete: Restrict)
+
+  issuedById       Int
+  issuedBy         User      @relation("CheckoutIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+
+  checkedOutAt     DateTime  @default(now())
+  returnedAt       DateTime?   // null = ยังไม่คืน
+  expectedReturnAt DateTime?   // วันคืนที่กำหนด
+  notes            String?   @db.Text
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([assetId, returnedAt])
+  @@index([holderId])
+  @@index([issuedById])
+  @@map("asset_checkouts")
 }
