@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { assetId, holderId, expectedReturnAt, notes } = result.data;
+    const { assetId, holderId, expectedReturnAt, notes, issuedById: overrideIssuedById } = result.data;
 
     const checkout = await prisma.$transaction(async (tx) => {
       const asset = await tx.asset.findUnique({ where: { id: assetId } });
@@ -101,12 +101,17 @@ export async function POST(request: NextRequest) {
         throw new Error('UNAVAILABLE:ครุภัณฑ์ไม่พร้อมใช้งาน (สถานะ: ' + asset.status + ')');
       }
 
+      const holder = await tx.user.findUnique({ where: { id: holderId } });
+      if (!holder || !holder.isActive) {
+        throw new Error('INVALID:ไม่พบผู้ยืมหรือบัญชีไม่ได้ใช้งาน');
+      }
+
       const [newCheckout] = await Promise.all([
         tx.assetCheckout.create({
           data: {
             assetId,
             holderId,
-            issuedById: authResult.user!.id,
+            issuedById: overrideIssuedById ?? authResult.user!.id,
             expectedReturnAt: expectedReturnAt ? new Date(expectedReturnAt) : null,
             notes,
           },

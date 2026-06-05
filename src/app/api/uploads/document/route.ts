@@ -11,6 +11,7 @@ import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
+import { fileTypeFromBuffer } from 'file-type';
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,16 +34,23 @@ export async function POST(request: NextRequest) {
     }
 
     const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
+
+    const bytes = await file.arrayBuffer();
+    const buf = Buffer.from(bytes);
+
+    // Detect MIME from magic bytes (not client-provided type)
+    const detected = await fileTypeFromBuffer(buf);
+    const detectedMime = detected?.mime ?? 'application/octet-stream';
+    if (!allowedTypes.includes(detectedMime)) {
       return NextResponse.json(
         { success: false, error: 'INVALID_FILE_TYPE', message: 'รองรับเฉพาะไฟล์ PDF, JPG, PNG, WEBP เท่านั้น' },
         { status: 400 }
       );
     }
 
-    const maxSize = file.type === 'application/pdf' ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
+    const maxSize = detectedMime === 'application/pdf' ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
     if (file.size > maxSize) {
-      const limitLabel = file.type === 'application/pdf' ? '10MB' : '5MB';
+      const limitLabel = detectedMime === 'application/pdf' ? '10MB' : '5MB';
       return NextResponse.json(
         { success: false, error: 'FILE_TOO_LARGE', message: `ขนาดไฟล์ต้องไม่เกิน ${limitLabel}` },
         { status: 400 }
@@ -52,12 +60,13 @@ export async function POST(request: NextRequest) {
     const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'documents');
     await mkdir(uploadDir, { recursive: true });
 
-    const ext = file.type === 'application/pdf' ? 'pdf' : (file.name.split('.').pop() || 'jpg');
-    const fileName = `doc_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const extMap: Record<string, string> = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+    const ext = extMap[detectedMime] || 'bin';
+    const { randomBytes } = require('crypto');
+    const fileName = `doc_${Date.now()}_${randomBytes(8).toString('hex')}.${ext}`;
     const filePath = path.join(uploadDir, fileName);
 
-    const bytes = await file.arrayBuffer();
-    await writeFile(filePath, Buffer.from(bytes));
+    await writeFile(filePath, buf);
 
     const url = `/uploads/documents/${fileName}`;
 

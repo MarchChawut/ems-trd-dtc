@@ -144,12 +144,20 @@ export const createSupplySchema = z.object({
   name: z.string().min(1, 'กรุณาระบุชื่อพัสดุ').max(200, 'ชื่อพัสดุต้องไม่เกิน 200 ตัวอักษร'),
   type: z.enum(['STOCK', 'NON_STOCK']),
   categoryId: z.number().int().positive().optional().nullable(),
+  supplyCode: z.string().max(100).optional().nullable(),
   unit: z.string().max(50).optional().nullable(),
   minimumQuantity: z.number().int().min(0).optional(),
+  maximumQuantity: z.number().int().min(0).optional(),
+  currentQuantity: z.number().int().min(0).optional(),
+  thresholdRed: z.number().int().min(1).max(99).optional(),
+  thresholdYellow: z.number().int().min(1).max(99).optional(),
   supplier: z.string().max(200).optional().nullable(),
+  issueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  recorderName: z.string().max(200).optional().nullable(),
   unitPrice: z.number().min(0).optional().nullable(),
   documentNumber: z.string().max(100).optional().nullable(),
   documentUrl: z.string().max(500).optional().nullable(),
+  imageUrl: z.string().max(500).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
 });
 
@@ -163,6 +171,9 @@ export const createTransactionSchema = z.object({
   documentNumber: z.string().max(100).optional().nullable(),
   documentUrl: z.string().max(500).optional().nullable(),
   recipientName: z.string().max(200).optional().nullable(),
+  returnerName: z.string().max(200).optional().nullable(),
+  returnReceiverName: z.string().max(200).optional().nullable(),
+  adjusterName: z.string().max(200).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
 });
 
@@ -195,6 +206,10 @@ export const createAssetSchema = z.object({
   department: z.string().max(100).optional().nullable(),
   imageUrl: z.string().max(500).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
+  receiverName: z.string().max(200).optional().nullable(),
+  lastInspectionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  lastInspectionCondition: z.enum(['EXCELLENT', 'GOOD', 'FAIR', 'POOR', 'DAMAGED']).optional().nullable(),
+  lastInspectedBy: z.string().max(200).optional().nullable(),
 });
 
 /**
@@ -203,6 +218,7 @@ export const createAssetSchema = z.object({
 export const createCheckoutSchema = z.object({
   assetId: z.number().int().positive('กรุณาระบุครุภัณฑ์'),
   holderId: z.number().int().positive('กรุณาระบุผู้ยืม'),
+  issuedById: z.number().int().positive().optional().nullable(),
   expectedReturnAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
 });
@@ -344,14 +360,8 @@ export function getLoginAttempts(identifier: string): { count: number; remaining
  * @returns {string} token ที่สร้างขึ้น
  */
 export function generateSecureToken(length: number = 32): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let token = '';
-  
-  for (let i = 0; i < length; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  
-  return token;
+  const { randomBytes } = require('crypto');
+  return randomBytes(Math.ceil(length * 3 / 4)).toString('base64url').slice(0, length);
 }
 
 /**

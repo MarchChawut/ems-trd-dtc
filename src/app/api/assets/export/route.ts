@@ -2,10 +2,13 @@
  * ==================================================
  * API Route: GET /api/assets/export
  * ==================================================
- * Export รายการครุภัณฑ์เป็น CSV
+ * Export รายการครุภัณฑ์เป็น Excel (.xlsx) 2 sheet:
+ *   1. ครุภัณฑ์ — รายการทั้งหมด
+ *   2. ประวัติการเบิก-คืน — ทุก checkout
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
@@ -25,6 +28,11 @@ const CONDITION_LABELS: Record<string, string> = {
   POOR: 'ไม่ดี',
   DAMAGED: 'เสียหาย',
 };
+
+function fmtDate(d: Date | string | null | undefined) {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('th-TH');
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -49,46 +57,98 @@ export async function GET(request: NextRequest) {
     const where: any = { isActive: true };
     if (status) where.status = status;
 
-    const assets = await prisma.asset.findMany({
-      where,
-      include: {
-        category: { select: { name: true } },
-        currentHolder: { select: { prefix: true, name: true } },
-      },
-      orderBy: { name: 'asc' },
-    });
-
-    const headers = [
-      'รหัส', 'ชื่อครุภัณฑ์', 'รหัสครุภัณฑ์', 'หมายเลขซีเรียล', 'ยี่ห้อ', 'รุ่น',
-      'หมวดหมู่', 'สถานะ', 'สภาพ', 'ผู้ครอบครอง', 'แผนก', 'สถานที่',
-      'วันที่จัดซื้อ', 'ราคา', 'เลขที่เอกสาร',
-    ];
-
-    const rows = assets.map(a => [
-      a.id,
-      `"${(a.name || '').replace(/"/g, '""')}"`,
-      `"${(a.assetTag || '').replace(/"/g, '""')}"`,
-      `"${(a.serialNumber || '').replace(/"/g, '""')}"`,
-      `"${(a.brand || '').replace(/"/g, '""')}"`,
-      `"${(a.model || '').replace(/"/g, '""')}"`,
-      `"${(a.category?.name || '').replace(/"/g, '""')}"`,
-      STATUS_LABELS[a.status] || a.status,
-      CONDITION_LABELS[a.condition] || a.condition,
-      `"${((a.currentHolder?.prefix || '') + (a.currentHolder?.name || '')).replace(/"/g, '""')}"`,
-      `"${(a.department || '').replace(/"/g, '""')}"`,
-      `"${(a.location || '').replace(/"/g, '""')}"`,
-      a.acquisitionDate ? new Date(a.acquisitionDate).toLocaleDateString('th-TH') : '',
-      a.acquisitionCost ? Number(a.acquisitionCost).toFixed(2) : '',
-      `"${(a.documentNumber || '').replace(/"/g, '""')}"`,
+    const [assets, checkouts] = await Promise.all([
+      prisma.asset.findMany({
+        where,
+        include: {
+          category: { select: { name: true } },
+          currentHolder: { select: { prefix: true, name: true } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.assetCheckout.findMany({
+        where: { asset: where },
+        include: {
+          asset: { select: { name: true, assetTag: true } },
+          holder: { select: { prefix: true, name: true } },
+          issuedBy: { select: { prefix: true, name: true } },
+        },
+        orderBy: { checkedOutAt: 'desc' },
+      }),
     ]);
 
-    const csvContent = '﻿' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    // ── Sheet 1: ครุภัณฑ์ ────────────────────────────────────────────────
+    const headers1 = [
+      'รหัส', 'ชื่อครุภัณฑ์', 'รหัสครุภัณฑ์', 'ยี่ห้อ', 'รุ่น',
+      'หมวดหมู่', 'สถานะ', 'สภาพ', 'ผู้ครอบครอง', 'แผนก', 'สถานที่',
+      'วันที่จัดซื้อ', 'ผู้รับ-บันทึก', 'เลขที่เอกสาร',
+      'วันที่ตรวจล่าสุด', 'สภาพล่าสุด', 'ผู้ตรวจ',
+    ];
+
+    const rows1 = assets.map(a => [
+      a.id,
+      a.name || '',
+      a.assetTag || '',
+      a.brand || '',
+      a.model || '',
+      a.category?.name || '',
+      STATUS_LABELS[a.status] || a.status,
+      CONDITION_LABELS[a.condition] || a.condition,
+      (a.currentHolder?.prefix || '') + (a.currentHolder?.name || ''),
+      a.department || '',
+      a.location || '',
+      fmtDate(a.acquisitionDate),
+      (a as any).receiverName || '',
+      a.documentNumber || '',
+      fmtDate((a as any).lastInspectionDate),
+      (a as any).lastInspectionCondition ? (CONDITION_LABELS[(a as any).lastInspectionCondition] || '') : '',
+      (a as any).lastInspectedBy || '',
+    ]);
+
+    const ws1 = XLSX.utils.aoa_to_sheet([headers1, ...rows1]);
+    ws1['!cols'] = headers1.map((_, i) => ({ wch: [6, 28, 16, 16, 16, 14, 14, 10, 20, 14, 16, 14, 18, 16, 14, 10, 16][i] || 12 }));
+
+    // ── Sheet 2: ประวัติการเบิก-คืน ─────────────────────────────────────
+    const headers2 = [
+      'ลำดับ', 'ชื่อครุภัณฑ์', 'รหัสครุภัณฑ์', 'ผู้เบิก',
+      'วันที่เบิก', 'กำหนดคืน', 'วันที่คืน', 'ระยะเวลา (วัน)',
+      'ผู้จ่าย/อนุมัติ', 'หมายเหตุ',
+    ];
+
+    const rows2 = checkouts.map((co, i) => {
+      const start = new Date(co.checkedOutAt);
+      const end = co.returnedAt ? new Date(co.returnedAt) : new Date();
+      const days = Math.ceil((end.getTime() - start.getTime()) / 86400000);
+      const holderN = (co.holder?.prefix || '') + (co.holder?.name || '');
+      const issuerN = (co.issuedBy?.prefix || '') + (co.issuedBy?.name || '');
+      return [
+        i + 1,
+        co.asset?.name || '',
+        co.asset?.assetTag || '',
+        holderN,
+        fmtDate(co.checkedOutAt),
+        fmtDate(co.expectedReturnAt),
+        co.returnedAt ? fmtDate(co.returnedAt) : 'ยังไม่คืน',
+        days,
+        issuerN,
+        co.notes || '',
+      ];
+    });
+
+    const ws2 = XLSX.utils.aoa_to_sheet([headers2, ...rows2]);
+    ws2['!cols'] = headers2.map((_, i) => ({ wch: [6, 28, 14, 20, 14, 14, 14, 14, 20, 24][i] || 12 }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws1, 'ครุภัณฑ์');
+    XLSX.utils.book_append_sheet(wb, ws2, 'ประวัติการเบิก-คืน');
+
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     const dateStr = new Date().toISOString().split('T')[0];
 
-    return new NextResponse(csvContent, {
+    return new NextResponse(buf, {
       headers: {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="assets_export_${dateStr}.csv"`,
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="assets_export_${dateStr}.xlsx"`,
       },
     });
   } catch (error) {

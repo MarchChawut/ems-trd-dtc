@@ -91,9 +91,16 @@ export async function PATCH(
       );
     }
 
+    const data = {
+      ...result.data,
+      ...(result.data.issueDate !== undefined && {
+        issueDate: result.data.issueDate ? new Date(result.data.issueDate) : null,
+      }),
+    };
+
     const supply = await prisma.supply.update({
       where: { id: parseInt(id) },
-      data: result.data,
+      data,
       include: { category: { select: { id: true, name: true } } },
     });
 

@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { createSupplySchema } from '@/lib/security';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
@@ -92,10 +93,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const data: Prisma.SupplyUncheckedCreateInput = {
+      ...result.data,
+      issueDate: result.data.issueDate ? new Date(result.data.issueDate) : null,
+    };
+
     const supply = await prisma.supply.create({
-      data: result.data,
+      data,
       include: { category: { select: { id: true, name: true } } },
     });
+
+    // Auto-create RECEIVE transaction when initial quantity > 0
+    if (supply.currentQuantity > 0) {
+      await prisma.supplyTransaction.create({
+        data: {
+          supplyId: supply.id,
+          type: 'RECEIVE',
+          quantity: supply.currentQuantity,
+          quantityBefore: 0,
+          quantityAfter: supply.currentQuantity,
+          performedById: authResult.user!.id,
+          recipientName: supply.recorderName || null,
+          documentNumber: supply.documentNumber || null,
+          documentUrl: supply.documentUrl || null,
+          notes: 'บันทึกจำนวนเริ่มต้น',
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,

@@ -66,11 +66,12 @@ function defaultAssetForm() {
     acquisitionDate: '', acquisitionCost: '' as string | number,
     documentNumber: '', documentUrl: '', imageUrl: '',
     location: '', department: '', notes: '',
+    receiverName: '',
   };
 }
 
 function defaultCheckoutForm() {
-  return { holderId: '' as string | number, expectedReturnAt: '', notes: '' };
+  return { holderId: '' as string | number, issuedById: '' as string | number, expectedReturnAt: '', notes: '' };
 }
 
 // ============================================
@@ -110,6 +111,19 @@ export default function AssetsPage() {
   const [historyAsset, setHistoryAsset] = useState<(Asset & { checkouts?: AssetCheckout[] }) | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Inspection modal
+  const [isInspectionOpen, setIsInspectionOpen] = useState(false);
+  const [inspectionAsset, setInspectionAsset] = useState<Asset | null>(null);
+  const [inspectionForm, setInspectionForm] = useState({ date: '', condition: '' as AssetCondition | '', inspector: '' });
+  const [inspectionLoading, setInspectionLoading] = useState(false);
+  const [inspectionError, setInspectionError] = useState<string | null>(null);
+
+  // Autocomplete dropdowns for text fields
+  const [brandDropdownOpen, setBrandDropdownOpen] = useState(false);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
+  const [departmentDropdownOpen, setDepartmentDropdownOpen] = useState(false);
+
   // Category modal
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
@@ -137,7 +151,13 @@ export default function AssetsPage() {
       if (sessionData.success) setUserRole(sessionData.data.user.role);
       if (assetsData.success) setAssets(assetsData.data);
       if (catsData.success) setCategories(catsData.data);
-      if (usersData.success) setUsers(usersData.data);
+      if (usersData.success) {
+        const roleOrder: Record<string, number> = { SUPER_ADMIN: 0, ADMIN: 1, MANAGER: 2, HR: 3, EMPLOYEE: 4 };
+        const sorted = [...usersData.data].sort((a: User, b: User) =>
+          (roleOrder[a.role] ?? 5) - (roleOrder[b.role] ?? 5) || a.name.localeCompare(b.name, 'th')
+        );
+        setUsers(sorted);
+      }
     } catch {
       setError('ไม่สามารถดึงข้อมูลได้');
     } finally {
@@ -189,6 +209,7 @@ export default function AssetsPage() {
       documentNumber: a.documentNumber ?? '', documentUrl: a.documentUrl ?? '',
       imageUrl: a.imageUrl ?? '', location: a.location ?? '',
       department: a.department ?? '', notes: a.notes ?? '',
+      receiverName: (a as any).receiverName ?? '',
     });
     setImageFile(null);
     setDocFile(null);
@@ -230,6 +251,7 @@ export default function AssetsPage() {
         location: formData.location || null,
         department: formData.department || null,
         notes: formData.notes || null,
+        receiverName: formData.receiverName || null,
       };
 
       const url = editingAsset ? `/api/assets/${editingAsset.id}` : '/api/assets';
@@ -256,6 +278,46 @@ export default function AssetsPage() {
     const res = await fetch(`/api/assets/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) setAssets(prev => prev.filter(a => a.id !== id));
+  }
+
+  // ----------------------------------------
+  // Inspection
+  // ----------------------------------------
+
+  function openInspectionModal(a: Asset) {
+    setInspectionAsset(a);
+    setInspectionForm({
+      date: (a as any).lastInspectionDate ? new Date((a as any).lastInspectionDate).toISOString().split('T')[0] : '',
+      condition: (a as any).lastInspectionCondition ?? '',
+      inspector: (a as any).lastInspectedBy ?? '',
+    });
+    setInspectionError(null);
+    setIsInspectionOpen(true);
+  }
+
+  async function handleSubmitInspection(e: React.FormEvent) {
+    e.preventDefault();
+    setInspectionLoading(true);
+    setInspectionError(null);
+    try {
+      const res = await fetch(`/api/assets/${inspectionAsset!.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lastInspectionDate: inspectionForm.date || null,
+          lastInspectionCondition: inspectionForm.condition || null,
+          lastInspectedBy: inspectionForm.inspector || null,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
+      setAssets(prev => prev.map(a => a.id === inspectionAsset!.id ? data.data : a));
+      setIsInspectionOpen(false);
+    } catch (err) {
+      setInspectionError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    } finally {
+      setInspectionLoading(false);
+    }
   }
 
   // ----------------------------------------
@@ -290,6 +352,7 @@ export default function AssetsPage() {
         body: JSON.stringify({
           assetId: checkoutAsset!.id,
           holderId: Number(checkoutForm.holderId),
+          issuedById: checkoutForm.issuedById ? Number(checkoutForm.issuedById) : null,
           expectedReturnAt: checkoutForm.expectedReturnAt || null,
           notes: checkoutForm.notes || null,
         }),
@@ -460,14 +523,14 @@ export default function AssetsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="text-left py-3 px-4 font-semibold text-slate-600">ชื่อครุภัณฑ์</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-600">รูปภาพ</th>
+                <th className="py-3 px-4 font-semibold text-slate-600">รูปภาพ</th>
                 <th className="text-left py-3 px-4 font-semibold text-slate-600">รหัสครุภัณฑ์</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-600">Serial</th>
+                <th className="text-left py-3 px-4 font-semibold text-slate-600">ชื่อครุภัณฑ์</th>
                 <th className="text-left py-3 px-4 font-semibold text-slate-600">รุ่น</th>
                 <th className="text-left py-3 px-4 font-semibold text-slate-600">หมวดหมู่</th>
                 <th className="text-left py-3 px-4 font-semibold text-slate-600">สถานะ</th>
                 <th className="text-left py-3 px-4 font-semibold text-slate-600">ผู้ครอบครอง</th>
+                <th className="text-left py-3 px-4 font-semibold text-slate-600">สถานที่</th>
                 <th className="text-center py-3 px-4 font-semibold text-slate-600">จัดการ</th>
               </tr>
             </thead>
@@ -484,17 +547,16 @@ export default function AssetsPage() {
                 return (
                   <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="py-3 px-4">
-                      <div className="font-medium text-slate-800">{a.name}</div>
-                      {a.brand && <div className="text-xs text-slate-400">{a.brand}</div>}
-                    </td>
-                    <td className="py-3 px-4">
                       {a.imageUrl
                         ? <img src={a.imageUrl} alt={a.name} className="w-10 h-10 rounded object-cover border border-slate-200" />
                         : <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center"><ImageIcon size={16} className="text-slate-300" /></div>
                       }
                     </td>
                     <td className="py-3 px-4 text-indigo-600 font-mono text-sm">{a.assetTag || '-'}</td>
-                    <td className="py-3 px-4 text-slate-600 font-mono text-xs">{a.serialNumber || '-'}</td>
+                    <td className="py-3 px-4">
+                      <div className="font-medium text-slate-800">{a.name}</div>
+                      {a.brand && <div className="text-xs text-slate-400">{a.brand}</div>}
+                    </td>
                     <td className="py-3 px-4 text-slate-600">{a.model || '-'}</td>
                     <td className="py-3 px-4 text-slate-600">{(a as any).category?.name || '-'}</td>
                     <td className="py-3 px-4">
@@ -503,6 +565,7 @@ export default function AssetsPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-slate-600">{holderName((a as any).currentHolder)}</td>
+                    <td className="py-3 px-4 text-slate-600">{(a as any).location || '-'}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-center gap-1">
                         <button onClick={() => openHistory(a)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700" title="ประวัติ">
@@ -513,6 +576,11 @@ export default function AssetsPage() {
                             className={cn('px-2 py-1 rounded text-xs font-medium transition-colors',
                               a.status === 'AVAILABLE' ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-amber-50 text-amber-700 hover:bg-amber-100')}>
                             {a.status === 'AVAILABLE' ? 'ยืม' : 'คืน'}
+                          </button>
+                        )}
+                        {canManage && (
+                          <button onClick={() => openInspectionModal(a)} className="p-1.5 rounded hover:bg-teal-50 text-slate-500 hover:text-teal-700 text-xs" title="ตรวจสภาพ">
+                            ตรวจสภาพ
                           </button>
                         )}
                         {canManage && (
@@ -547,6 +615,12 @@ export default function AssetsPage() {
               {formError && <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-600">{formError}</div>}
 
               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">รหัสครุภัณฑ์ (Asset Tag)</label>
+                  <input value={formData.assetTag} onChange={e => setFormData(p => ({ ...p, assetTag: e.target.value }))}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="เช่น 7440-001-0003" />
+                </div>
+
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">ชื่อครุภัณฑ์ *</label>
                   <input required value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
@@ -554,27 +628,29 @@ export default function AssetsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">รหัสครุภัณฑ์ (Asset Tag)</label>
-                  <input value={formData.assetTag} onChange={e => setFormData(p => ({ ...p, assetTag: e.target.value }))}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="เช่น 00193" />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">หมายเลขซีเรียล</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">หมายเลขซีเรียลสินค้า</label>
                   <input value={formData.serialNumber} onChange={e => setFormData(p => ({ ...p, serialNumber: e.target.value }))}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="เช่น 7440-001-0003" />
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="เช่น SN-0987-654-321" />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">ยี่ห้อ</label>
-                  <input value={formData.brand} onChange={e => setFormData(p => ({ ...p, brand: e.target.value }))}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="เช่น Raspberry Pi Foundation" />
+                  <div className="relative">
+                    <input value={formData.brand} onChange={e => { setFormData(p => ({ ...p, brand: e.target.value })); setBrandDropdownOpen(true); }}
+                      onFocus={() => setBrandDropdownOpen(true)} onBlur={() => setTimeout(() => setBrandDropdownOpen(false), 150)}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="เช่น Raspberry Pi Foundation" autoComplete="off" />
+                    {brandDropdownOpen && (() => { const q = formData.brand.toLowerCase(); const opts = [...new Set(assets.filter(a => a.brand && a.id !== editingAsset?.id).map(a => a.brand as string))].filter(v => !q || v.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b, 'th')); return opts.length > 0 ? (<div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-36 overflow-y-auto">{opts.map(v => (<button key={v} type="button" onMouseDown={() => { setFormData(p => ({ ...p, brand: v })); setBrandDropdownOpen(false); }} className={cn('w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 hover:text-indigo-700 transition-colors', formData.brand === v && 'bg-indigo-50 text-indigo-700 font-medium')}>{v}</button>))}</div>) : null; })()}
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">รุ่น (Model)</label>
-                  <input value={formData.model} onChange={e => setFormData(p => ({ ...p, model: e.target.value }))}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="เช่น Raspberry Pi" />
+                  <div className="relative">
+                    <input value={formData.model} onChange={e => { setFormData(p => ({ ...p, model: e.target.value })); setModelDropdownOpen(true); }}
+                      onFocus={() => setModelDropdownOpen(true)} onBlur={() => setTimeout(() => setModelDropdownOpen(false), 150)}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="เช่น Raspberry Pi" autoComplete="off" />
+                    {modelDropdownOpen && (() => { const q = formData.model.toLowerCase(); const opts = [...new Set(assets.filter(a => a.model && a.id !== editingAsset?.id).map(a => a.model as string))].filter(v => !q || v.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b, 'th')); return opts.length > 0 ? (<div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-36 overflow-y-auto">{opts.map(v => (<button key={v} type="button" onMouseDown={() => { setFormData(p => ({ ...p, model: v })); setModelDropdownOpen(false); }} className={cn('w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 hover:text-indigo-700 transition-colors', formData.model === v && 'bg-indigo-50 text-indigo-700 font-medium')}>{v}</button>))}</div>) : null; })()}
+                  </div>
                 </div>
 
                 <div>
@@ -609,9 +685,12 @@ export default function AssetsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">ราคาจัดซื้อ (บาท)</label>
-                  <input type="number" min="0" step="0.01" value={formData.acquisitionCost} onChange={e => setFormData(p => ({ ...p, acquisitionCost: e.target.value }))}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.00" />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">ผู้รับ-บันทึก</label>
+                  <select value={formData.receiverName} onChange={e => setFormData(p => ({ ...p, receiverName: e.target.value }))}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="">-- ไม่ระบุ --</option>
+                    {users.filter(u => u.isActive).map(u => { const n = `${u.prefix || ''}${u.name}`; return <option key={u.id} value={n}>{n}{(u.role === 'SUPER_ADMIN' || u.role === 'ADMIN') ? ' ★' : ''}</option>; })}
+                  </select>
                 </div>
 
                 <div>
@@ -622,14 +701,22 @@ export default function AssetsPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">แผนก</label>
-                  <input value={formData.department} onChange={e => setFormData(p => ({ ...p, department: e.target.value }))}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="หน่วยงาน" />
+                  <div className="relative">
+                    <input value={formData.department} onChange={e => { setFormData(p => ({ ...p, department: e.target.value })); setDepartmentDropdownOpen(true); }}
+                      onFocus={() => setDepartmentDropdownOpen(true)} onBlur={() => setTimeout(() => setDepartmentDropdownOpen(false), 150)}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="หน่วยงาน" autoComplete="off" />
+                    {departmentDropdownOpen && (() => { const q = formData.department.toLowerCase(); const opts = [...new Set(assets.filter(a => a.department && a.id !== editingAsset?.id).map(a => a.department as string))].filter(v => !q || v.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b, 'th')); return opts.length > 0 ? (<div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-36 overflow-y-auto">{opts.map(v => (<button key={v} type="button" onMouseDown={() => { setFormData(p => ({ ...p, department: v })); setDepartmentDropdownOpen(false); }} className={cn('w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 hover:text-indigo-700 transition-colors', formData.department === v && 'bg-indigo-50 text-indigo-700 font-medium')}>{v}</button>))}</div>) : null; })()}
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">สถานที่</label>
-                  <input value={formData.location} onChange={e => setFormData(p => ({ ...p, location: e.target.value }))}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ห้อง/อาคาร" />
+                  <div className="relative">
+                    <input value={formData.location} onChange={e => { setFormData(p => ({ ...p, location: e.target.value })); setLocationDropdownOpen(true); }}
+                      onFocus={() => setLocationDropdownOpen(true)} onBlur={() => setTimeout(() => setLocationDropdownOpen(false), 150)}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ห้อง/อาคาร" autoComplete="off" />
+                    {locationDropdownOpen && (() => { const q = formData.location.toLowerCase(); const opts = [...new Set(assets.filter(a => a.location && a.id !== editingAsset?.id).map(a => a.location as string))].filter(v => !q || v.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b, 'th')); return opts.length > 0 ? (<div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-36 overflow-y-auto">{opts.map(v => (<button key={v} type="button" onMouseDown={() => { setFormData(p => ({ ...p, location: v })); setLocationDropdownOpen(false); }} className={cn('w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 hover:text-indigo-700 transition-colors', formData.location === v && 'bg-indigo-50 text-indigo-700 font-medium')}>{v}</button>))}</div>) : null; })()}
+                  </div>
                 </div>
 
                 <div>
@@ -657,6 +744,14 @@ export default function AssetsPage() {
                   <textarea rows={2} value={formData.notes} onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
                 </div>
+
+                {(editingAsset as any)?.currentHolder && (
+                  <div className="col-span-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                    <p className="text-xs font-semibold text-blue-700 mb-1">ผู้ครอบครองปัจจุบัน</p>
+                    <p className="text-sm text-blue-800 font-medium">{holderName((editingAsset as any).currentHolder)}</p>
+                  </div>
+                )}
+
               </div>
 
               <div className="flex gap-2 pt-2">
@@ -690,13 +785,21 @@ export default function AssetsPage() {
                 {checkoutError && <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-600">{checkoutError}</div>}
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">ผู้ยืม *</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">ผู้เบิก (ผู้ยืม) *</label>
                   <select required value={checkoutForm.holderId} onChange={e => setCheckoutForm(p => ({ ...p, holderId: e.target.value }))}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option value="">-- เลือกผู้ยืม --</option>
+                    <option value="">-- เลือกผู้เบิก --</option>
                     {users.filter(u => u.isActive).map(u => (
                       <option key={u.id} value={u.id}>{(u.prefix || '') + u.name} {u.department ? `(${u.department})` : ''}</option>
                     ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">ผู้จ่ายสินค้า/อนุมัติ</label>
+                  <select value={checkoutForm.issuedById} onChange={e => setCheckoutForm(p => ({ ...p, issuedById: e.target.value }))}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="">-- บันทึกจากผู้ล็อกอิน (อัตโนมัติ) --</option>
+                    {users.filter(u => u.isActive).map(u => { const n = `${u.prefix || ''}${u.name}`; return <option key={u.id} value={u.id}>{n}{(u.role === 'SUPER_ADMIN' || u.role === 'ADMIN') ? ' ★' : ''}</option>; })}
                   </select>
                 </div>
 
@@ -751,41 +854,105 @@ export default function AssetsPage() {
               </div>
               <button onClick={() => setIsHistoryOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={18} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-5">
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {/* Asset summary info */}
+              <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 rounded-lg p-3">
+                <div><span className="text-slate-500">วันที่นำเข้า:</span> <span className="font-medium">{formatDate((historyAsset as any).acquisitionDate)}</span></div>
+                <div><span className="text-slate-500">สภาพปัจจุบัน:</span> <span className="font-medium">{CONDITION_LABELS[(historyAsset as any).condition as AssetCondition] || '-'}</span></div>
+                <div><span className="text-slate-500">ผู้ครอบครอง:</span> <span className="font-medium">{holderName((historyAsset as any).currentHolder)}</span></div>
+                {(historyAsset as any).lastInspectionDate && (
+                  <div><span className="text-slate-500">ตรวจล่าสุด:</span> <span className="font-medium">{formatDate((historyAsset as any).lastInspectionDate)} — {CONDITION_LABELS[(historyAsset as any).lastInspectionCondition as AssetCondition] || ''}</span></div>
+                )}
+                {(historyAsset as any).receiverName && (
+                  <div><span className="text-slate-500">ผู้รับ-บันทึก:</span> <span className="font-medium">{(historyAsset as any).receiverName}</span></div>
+                )}
+              </div>
+
               {historyLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="animate-spin text-indigo-600 w-6 h-6" /></div>
               ) : !(historyAsset as any).checkouts?.length ? (
-                <p className="text-center text-slate-400 py-8">ยังไม่มีประวัติการยืม</p>
+                <p className="text-center text-slate-400 py-8">ยังไม่มีประวัติการเบิก-คืน</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200">
-                      <th className="text-left py-2 px-3 font-semibold text-slate-600">ผู้ยืม</th>
-                      <th className="text-left py-2 px-3 font-semibold text-slate-600">วันที่ยืม</th>
-                      <th className="text-left py-2 px-3 font-semibold text-slate-600">กำหนดคืน</th>
+                      <th className="text-left py-2 px-3 font-semibold text-slate-600">ผู้เบิก</th>
+                      <th className="text-left py-2 px-3 font-semibold text-slate-600">วันที่เบิก</th>
                       <th className="text-left py-2 px-3 font-semibold text-slate-600">วันที่คืน</th>
-                      <th className="text-left py-2 px-3 font-semibold text-slate-600">ผู้อนุมัติ</th>
+                      <th className="text-left py-2 px-3 font-semibold text-slate-600">ระยะเวลา</th>
+                      <th className="text-left py-2 px-3 font-semibold text-slate-600">ผู้จ่าย/อนุมัติ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {(historyAsset as any).checkouts.map((co: AssetCheckout) => (
-                      <tr key={co.id} className="hover:bg-slate-50">
-                        <td className="py-2 px-3 font-medium text-slate-700">{holderName((co as any).holder)}</td>
-                        <td className="py-2 px-3 text-slate-500">{formatDate(co.checkedOutAt)}</td>
-                        <td className="py-2 px-3 text-slate-500">{formatDate(co.expectedReturnAt)}</td>
-                        <td className="py-2 px-3">
-                          {co.returnedAt
-                            ? <span className="text-emerald-600">{formatDate(co.returnedAt)}</span>
-                            : <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">ยังไม่คืน</span>
-                          }
-                        </td>
-                        <td className="py-2 px-3 text-slate-500">{(co as any).issuedBy?.name || '-'}</td>
-                      </tr>
-                    ))}
+                    {(historyAsset as any).checkouts.map((co: AssetCheckout) => {
+                      const start = new Date(co.checkedOutAt);
+                      const end = co.returnedAt ? new Date(co.returnedAt) : new Date();
+                      const days = Math.ceil((end.getTime() - start.getTime()) / 86400000);
+                      return (
+                        <tr key={co.id} className="hover:bg-slate-50">
+                          <td className="py-2 px-3 font-medium text-slate-700">{holderName((co as any).holder)}</td>
+                          <td className="py-2 px-3 text-slate-500">{formatDate(co.checkedOutAt)}</td>
+                          <td className="py-2 px-3">
+                            {co.returnedAt
+                              ? <span className="text-emerald-600">{formatDate(co.returnedAt)}</span>
+                              : <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">ยังไม่คืน</span>
+                            }
+                          </td>
+                          <td className="py-2 px-3 text-slate-500 text-xs">{days} วัน{!co.returnedAt ? ' (ณ ปัจจุบัน)' : ''}</td>
+                          <td className="py-2 px-3 text-slate-500">{(co as any).issuedBy ? holderName((co as any).issuedBy) : '-'}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Inspection Modal ===== */}
+      {isInspectionOpen && inspectionAsset && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <div>
+                <h2 className="font-bold text-slate-800">ตรวจสภาพครุภัณฑ์</h2>
+                <p className="text-sm text-slate-500">{inspectionAsset.name}</p>
+              </div>
+              <button onClick={() => setIsInspectionOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={18} /></button>
+            </div>
+            <form onSubmit={handleSubmitInspection} className="p-5 space-y-4">
+              {inspectionError && <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-600">{inspectionError}</div>}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">วันที่ตรวจ</label>
+                <input type="date" value={inspectionForm.date} onChange={e => setInspectionForm(p => ({ ...p, date: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">สภาพเมื่อตรวจ</label>
+                <select value={inspectionForm.condition} onChange={e => setInspectionForm(p => ({ ...p, condition: e.target.value as AssetCondition | '' }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="">-- ไม่ระบุ --</option>
+                  {Object.entries(CONDITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">ผู้ตรวจ</label>
+                <select value={inspectionForm.inspector} onChange={e => setInspectionForm(p => ({ ...p, inspector: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="">-- ไม่ระบุ --</option>
+                  {users.filter(u => u.isActive).map(u => { const n = `${u.prefix || ''}${u.name}`; return <option key={u.id} value={n}>{n}{(u.role === 'SUPER_ADMIN' || u.role === 'ADMIN') ? ' ★' : ''}</option>; })}
+                </select>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setIsInspectionOpen(false)} className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50 text-sm">ยกเลิก</button>
+                <button type="submit" disabled={inspectionLoading} className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm disabled:bg-teal-400 flex items-center justify-center gap-2">
+                  {inspectionLoading && <Loader2 size={14} className="animate-spin" />}
+                  บันทึกผลตรวจ
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -92,9 +92,32 @@ export async function PATCH(
       );
     }
 
+    const d = result.data;
+    const updateData: Record<string, unknown> = {};
+    if ('name' in d) updateData.name = d.name;
+    if ('assetTag' in d) updateData.assetTag = d.assetTag ?? null;
+    if ('serialNumber' in d) updateData.serialNumber = d.serialNumber ?? null;
+    if ('model' in d) updateData.model = d.model ?? null;
+    if ('brand' in d) updateData.brand = d.brand ?? null;
+    if ('categoryId' in d) updateData.categoryId = d.categoryId != null ? d.categoryId : null;
+    if ('status' in d) updateData.status = d.status;
+    if ('condition' in d) updateData.condition = d.condition;
+    if ('acquisitionDate' in d) updateData.acquisitionDate = d.acquisitionDate ? new Date(d.acquisitionDate!) : null;
+    if ('acquisitionCost' in d) updateData.acquisitionCost = d.acquisitionCost ?? null;
+    if ('documentNumber' in d) updateData.documentNumber = d.documentNumber ?? null;
+    if ('documentUrl' in d) updateData.documentUrl = d.documentUrl ?? null;
+    if ('imageUrl' in d) updateData.imageUrl = d.imageUrl ?? null;
+    if ('location' in d) updateData.location = d.location ?? null;
+    if ('department' in d) updateData.department = d.department ?? null;
+    if ('notes' in d) updateData.notes = d.notes ?? null;
+    if ('receiverName' in d) updateData.receiverName = d.receiverName ?? null;
+    if ('lastInspectionDate' in d) updateData.lastInspectionDate = d.lastInspectionDate ? new Date(d.lastInspectionDate!) : null;
+    if ('lastInspectionCondition' in d) updateData.lastInspectionCondition = d.lastInspectionCondition ?? null;
+    if ('lastInspectedBy' in d) updateData.lastInspectedBy = d.lastInspectedBy ?? null;
+
     const asset = await prisma.asset.update({
       where: { id: parseInt(id) },
-      data: result.data,
+      data: updateData as any,
       include: {
         category: { select: { id: true, name: true } },
         currentHolder: { select: { id: true, prefix: true, name: true, avatar: true } },

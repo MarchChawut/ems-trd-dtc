@@ -92,8 +92,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const d = result.data;
     const asset = await prisma.asset.create({
-      data: result.data,
+      data: {
+        name: d.name,
+        assetTag: d.assetTag ?? null,
+        serialNumber: d.serialNumber ?? null,
+        model: d.model ?? null,
+        brand: d.brand ?? null,
+        ...(d.categoryId != null ? { categoryId: d.categoryId } : {}),
+        status: d.status ?? 'AVAILABLE',
+        condition: d.condition ?? 'GOOD',
+        acquisitionDate: d.acquisitionDate ? new Date(d.acquisitionDate) : null,
+        acquisitionCost: d.acquisitionCost ?? null,
+        documentNumber: d.documentNumber ?? null,
+        documentUrl: d.documentUrl ?? null,
+        imageUrl: d.imageUrl ?? null,
+        location: d.location ?? null,
+        department: d.department ?? null,
+        notes: d.notes ?? null,
+        receiverName: d.receiverName ?? null,
+        lastInspectionDate: d.lastInspectionDate ? new Date(d.lastInspectionDate) : null,
+        lastInspectionCondition: d.lastInspectionCondition ?? null,
+        lastInspectedBy: d.lastInspectedBy ?? null,
+      },
       include: {
         category: { select: { id: true, name: true } },
         currentHolder: { select: { id: true, prefix: true, name: true, avatar: true } },

@@ -267,24 +267,23 @@ export async function PATCH(
       updateData.prefix = validationResult.data.prefix ? sanitizeInput(validationResult.data.prefix) : null;
     }
 
-    if (department !== undefined) {
-      updateData.department = department ? sanitizeInput(department) : null;
-    }
-
-    if (validationResult.data.division !== undefined) {
-      updateData.division = validationResult.data.division ? sanitizeInput(validationResult.data.division) : null;
-    }
-
-    if (validationResult.data.position !== undefined) {
-      updateData.position = validationResult.data.position ? sanitizeInput(validationResult.data.position) : null;
-    }
-
-    if (validationResult.data.positionSecond !== undefined) {
-      updateData.positionSecond = validationResult.data.positionSecond ? sanitizeInput(validationResult.data.positionSecond) : null;
-    }
-
-    if (validationResult.data.positionLevel !== undefined) {
-      updateData.positionLevel = validationResult.data.positionLevel;
+    // เฉพาะ ADMIN เท่านั้นที่สามารถเปลี่ยนข้อมูลองค์กร
+    if (isAdmin(currentUser.role)) {
+      if (department !== undefined) {
+        updateData.department = department ? sanitizeInput(department) : null;
+      }
+      if (validationResult.data.division !== undefined) {
+        updateData.division = validationResult.data.division ? sanitizeInput(validationResult.data.division) : null;
+      }
+      if (validationResult.data.position !== undefined) {
+        updateData.position = validationResult.data.position ? sanitizeInput(validationResult.data.position) : null;
+      }
+      if (validationResult.data.positionSecond !== undefined) {
+        updateData.positionSecond = validationResult.data.positionSecond ? sanitizeInput(validationResult.data.positionSecond) : null;
+      }
+      if (validationResult.data.positionLevel !== undefined) {
+        updateData.positionLevel = validationResult.data.positionLevel;
+      }
     }
 
     if (validationResult.data.phone !== undefined) {

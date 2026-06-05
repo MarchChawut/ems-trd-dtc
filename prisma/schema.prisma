@@ -372,16 +372,25 @@ model Supply {
   categoryId       Int?
   category         SupplyCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
+  // รหัสพัสดุ (สำหรับติดสินค้า)
+  supplyCode       String?         @db.VarChar(100)  // รหัสพัสดุที่ติดบนสินค้า
+
   // จำนวน (เฉพาะ STOCK)
   unit             String?         @db.VarChar(50)
   currentQuantity  Int             @default(0)   // อัปเดตด้วย $transaction
   minimumQuantity  Int             @default(0)   // จำนวนขั้นต่ำ - สำหรับแจ้งเตือน
+  maximumQuantity  Int             @default(0)   // จำนวนสูงสุดที่ควรมีในคลัง
+  thresholdRed     Int             @default(20)  // % ต่ำกว่านี้ = แดง (เทียบกับ minimumQuantity)
+  thresholdYellow  Int             @default(50)  // % ต่ำกว่าหรือเท่านี้ = เหลือง
 
   // ข้อมูลจัดซื้อ
   supplier         String?         @db.VarChar(200)
   unitPrice        Decimal?        @db.Decimal(12, 2)
   documentNumber   String?         @db.VarChar(100)  // เลขที่เอกสารรับ
   documentUrl      String?         @db.VarChar(500)  // URL ไฟล์ PDF แนบ
+  imageUrl         String?         @db.VarChar(500)  // URL รูปภาพพัสดุ
+  issueDate        DateTime?       @db.Date          // วันที่เบิกของ
+  recorderName     String?         @db.VarChar(200)  // ชื่อผู้ลงข้อมูล
 
   notes            String?         @db.Text
   isActive         Boolean         @default(true)
@@ -411,8 +420,11 @@ model SupplyTransaction {
 
   documentNumber   String?         @db.VarChar(100)  // เลขที่เอกสาร
   documentUrl      String?         @db.VarChar(500)  // URL ไฟล์ PDF แนบ
-  recipientName    String?         @db.VarChar(200)  // ชื่อผู้รับ (กรณีเบิก)
-  notes            String?         @db.Text
+  recipientName      String?         @db.VarChar(200)  // ชื่อผู้รับ (กรณีเบิก)
+  returnerName       String?         @db.VarChar(200)  // ชื่อผู้คืน (กรณีคืน)
+  returnReceiverName String?         @db.VarChar(200)  // ชื่อผู้รับคืน (กรณีคืน)
+  adjusterName       String?         @db.VarChar(200)  // ชื่อผู้ปรับยอด (กรณีปรับยอด)
+  notes              String?         @db.Text
 
   performedById    Int
   performedBy      User            @relation("TxPerformer", fields: [performedById], references: [id], onDelete: Restrict)
@@ -475,6 +487,11 @@ model Asset {
   imageUrl         String?         @db.VarChar(500)  // รูปครุภัณฑ์
   notes            String?         @db.Text
   isActive         Boolean         @default(true)
+
+  receiverName            String?         @db.VarChar(200)  // ชื่อผู้รับ-บันทึก
+  lastInspectionDate      DateTime?       @db.Date           // วันที่ตรวจล่าสุด
+  lastInspectionCondition AssetCondition?                    // สภาพเมื่อตรวจล่าสุด
+  lastInspectedBy         String?         @db.VarChar(200)  // ผู้ตรวจล่าสุด
 
   checkouts        AssetCheckout[]
 

@@ -17,15 +17,44 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../src/lib/logger';
 
+// Load .env manually (dotenv may not be installed)
+const envPath = path.resolve(__dirname, '../.env');
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const m = line.match(/^([^#=]+)=(.*)$/);
+    if (m && !process.env[m[1].trim()]) {
+      process.env[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, '');
+    }
+  }
+}
+
 const execAsync = promisify(exec);
+
+// Parse DATABASE_URL as fallback: mysql://user:pass@host:port/dbname
+function parseDatabaseUrl(url: string) {
+  try {
+    const u = new URL(url);
+    return {
+      host: u.hostname,
+      port: u.port || '3306',
+      user: decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      dbname: u.pathname.replace('/', ''),
+    };
+  } catch {
+    return null;
+  }
+}
+
+const _parsed = parseDatabaseUrl(process.env.DATABASE_URL || '');
 
 // Configuration
 const BACKUP_DIR = process.env.BACKUP_DIR || './backups';
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_PORT = process.env.DB_PORT || '3306';
-const DB_NAME = process.env.DB_NAME || 'ems_db';
-const DB_USER = process.env.DB_USER || 'root';
-const DB_PASSWORD = process.env.DB_PASSWORD || '';
+const DB_HOST = process.env.DB_HOST || _parsed?.host || 'localhost';
+const DB_PORT = process.env.DB_PORT || _parsed?.port || '3306';
+const DB_NAME = process.env.DB_NAME || _parsed?.dbname || 'ems_db';
+const DB_USER = process.env.DB_USER || _parsed?.user || 'root';
+const DB_PASSWORD = process.env.DB_PASSWORD || _parsed?.password || '';
 const RETENTION_DAYS = parseInt(process.env.BACKUP_RETENTION_DAYS || '7', 10);
 
 /**
@@ -56,11 +85,15 @@ export async function createBackup(): Promise<{ success: boolean; filename?: str
   const filepath = path.join(BACKUP_DIR, filename);
   
   try {
-    // Build mysqldump command
-    const cmd = `mysqldump -h ${DB_HOST} -P ${DB_PORT} -u ${DB_USER} ${DB_PASSWORD ? `-p${DB_PASSWORD}` : ''} --single-transaction --routines --triggers ${DB_NAME} > "${filepath}"`;
-    
     logger.info('Starting database backup', { filename, database: DB_NAME });
-    
+
+    // Use local mysqldump if available, otherwise fall back to Docker
+    const hasMysqldump = await execAsync('which mysqldump').then(() => true).catch(() => false);
+    const dumpArgs = `-h ${DB_HOST} -P ${DB_PORT} -u ${DB_USER} ${DB_PASSWORD ? `-p${DB_PASSWORD}` : ''} --single-transaction --routines --triggers ${DB_NAME}`;
+    const cmd = hasMysqldump
+      ? `mysqldump ${dumpArgs} > "${filepath}"`
+      : `docker run --rm mysql:8 mysqldump ${dumpArgs} > "${filepath}"`;
+
     await execAsync(cmd);
     
     // Compress backup file
@@ -170,9 +203,12 @@ export async function restoreBackup(filename: string): Promise<{ success: boolea
     }
     
     logger.info('Starting database restore', { filename });
-    
-    // Restore database
-    const cmd = `mysql -h ${DB_HOST} -P ${DB_PORT} -u ${DB_USER} ${DB_PASSWORD ? `-p${DB_PASSWORD}` : ''} ${DB_NAME} < "${sqlFile}"`;
+
+    const hasMysql = await execAsync('which mysql').then(() => true).catch(() => false);
+    const connArgs = `-h ${DB_HOST} -P ${DB_PORT} -u ${DB_USER} ${DB_PASSWORD ? `-p${DB_PASSWORD}` : ''} ${DB_NAME}`;
+    const cmd = hasMysql
+      ? `mysql ${connArgs} < "${sqlFile}"`
+      : `docker run --rm -i mysql:8 mysql ${connArgs} < "${sqlFile}"`;
     await execAsync(cmd);
     
     // Cleanup decompressed file

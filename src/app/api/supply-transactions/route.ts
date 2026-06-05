@@ -94,10 +94,6 @@ export async function POST(request: NextRequest) {
         throw new Error('NOT_FOUND:ไม่พบพัสดุ');
       }
 
-      if (supply.type !== 'STOCK') {
-        throw new Error('INVALID:ไม่สามารถทำรายการเคลื่อนไหวกับพัสดุไม่คงคลัง');
-      }
-
       const qBefore = supply.currentQuantity;
       let qAfter: number;
 

@@ -471,13 +471,20 @@ export interface Supply {
   type: SupplyType;
   categoryId: number | null;
   category?: SupplyCategory | null;
+  supplyCode: string | null;
   unit: string | null;
   currentQuantity: number;
   minimumQuantity: number;
+  maximumQuantity: number;
+  thresholdRed: number;
+  thresholdYellow: number;
   supplier: string | null;
   unitPrice: number | null;
   documentNumber: string | null;
   documentUrl: string | null;
+  imageUrl: string | null;
+  issueDate: Date | string | null;
+  recorderName: string | null;
   notes: string | null;
   isActive: boolean;
   createdAt: Date;
@@ -512,6 +519,7 @@ export interface CreateSupplyInput {
   unitPrice?: number | null;
   documentNumber?: string | null;
   documentUrl?: string | null;
+  imageUrl?: string | null;
   notes?: string | null;
 }
 

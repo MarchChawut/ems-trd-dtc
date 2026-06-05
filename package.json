@@ -11,7 +11,10 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:backup": "tsx scripts/backup.ts",
+    "db:backup:list": "tsx scripts/backup.ts list",
+    "db:restore": "tsx scripts/backup.ts restore"
   },
   "dependencies": {
     "@prisma/client": "^5.7.0",
@@ -29,7 +32,9 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "dompurify": "^3.0.6",
+    "exceljs": "^4.4.0",
     "express-rate-limit": "^7.1.5",
+    "file-type": "^22.0.1",
     "helmet": "^7.1.0",
     "isomorphic-dompurify": "^2.0.0",
     "jsonwebtoken": "^9.0.2",
@@ -40,6 +45,7 @@
     "recharts": "^3.7.0",
     "tailwind-merge": "^2.2.0",
     "tailwindcss-animate": "^1.0.7",
+    "xlsx": "^0.18.5",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -58,7 +64,6 @@
     "typescript": "^5.9.3"
   },
   "prisma": {
-  "seed": "node dist-seed/prisma/seed.js"
-}
-
+    "seed": "node dist-seed/prisma/seed.js"
+  }
 }
