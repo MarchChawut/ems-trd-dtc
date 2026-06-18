@@ -9,8 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
+import { prisma } from '@/lib/prisma';
 import { fileTypeFromBuffer } from 'file-type';
 
 export async function POST(request: NextRequest) {
@@ -57,20 +56,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'documents');
-    await mkdir(uploadDir, { recursive: true });
-
     const extMap: Record<string, string> = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
     const ext = extMap[detectedMime] || 'bin';
-    const { randomBytes } = require('crypto');
-    const fileName = `doc_${Date.now()}_${randomBytes(8).toString('hex')}.${ext}`;
-    const filePath = path.join(uploadDir, fileName);
+    const fileName = `doc_${Date.now()}.${ext}`;
 
-    await writeFile(filePath, buf);
+    // เก็บ byte ของไฟล์ลงฐานข้อมูลกลาง แทนการเขียนลงดิสก์เครื่อง
+    // ทำให้ทุกเครื่องที่ใช้ DB เดียวกันเปิดไฟล์ได้ (ไม่ผูกกับดิสก์เครื่องที่อัปโหลด)
+    const record = await prisma.uploadedFile.create({
+      data: {
+        data: buf,
+        mimeType: detectedMime,
+        fileName,
+        size: file.size,
+        uploadedById: authResult.user!.id,
+      },
+      select: { id: true },
+    });
 
-    const url = `/uploads/documents/${fileName}`;
+    const url = `/api/files/${record.id}`;
 
-    logger.info('Document uploaded', { fileName, size: file.size, userId: authResult.user!.id });
+    logger.info('Document uploaded', { fileId: record.id, fileName, size: file.size, userId: authResult.user!.id });
 
     return NextResponse.json({
       success: true,

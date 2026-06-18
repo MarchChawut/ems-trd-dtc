@@ -85,6 +85,9 @@ export default function AssetsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<AssetStatus | ''>('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('EMPLOYEE');
   const [error, setError] = useState<string | null>(null);
 
@@ -168,11 +171,43 @@ export default function AssetsPage() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   // ----------------------------------------
+  // Recent searches (localStorage)
+  // ----------------------------------------
+
+  const RECENT_KEY = 'assets_recent_searches';
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setRecentSearches(parsed.filter(v => typeof v === 'string'));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  function commitSearch(term: string) {
+    const t = term.trim();
+    if (!t) return;
+    setRecentSearches(prev => {
+      const next = [t, ...prev.filter(v => v.toLowerCase() !== t.toLowerCase())].slice(0, 6);
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  function clearRecentSearches() {
+    setRecentSearches([]);
+    try { localStorage.removeItem(RECENT_KEY); } catch { /* ignore */ }
+  }
+
+  // ----------------------------------------
   // Filtered
   // ----------------------------------------
 
   const filteredAssets = assets.filter(a => {
     if (statusFilter && a.status !== statusFilter) return false;
+    if (categoryFilter && a.categoryId !== Number(categoryFilter)) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return a.name.toLowerCase().includes(q) ||
@@ -507,13 +542,49 @@ export default function AssetsPage() {
       </div>
 
       {/* Search */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 max-w-xs">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10" />
           <input type="text" placeholder="ค้นหาชื่อ, รหัส, serial, รุ่น..."
-            value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onFocus={() => setSearchDropdownOpen(true)}
+            onBlur={() => { setTimeout(() => setSearchDropdownOpen(false), 150); commitSearch(searchQuery); }}
+            onKeyDown={e => { if (e.key === 'Enter') { commitSearch(searchQuery); setSearchDropdownOpen(false); } }}
+            className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" autoComplete="off" />
+          {searchDropdownOpen && (() => {
+            const q = searchQuery.trim().toLowerCase();
+            const opts = recentSearches.filter(v => !q || v.toLowerCase().includes(q));
+            return opts.length > 0 ? (
+              <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+                <div className="px-3 py-1.5 text-xs font-medium text-slate-400 border-b border-slate-100">ค้นหาล่าสุด</div>
+                <div className="max-h-48 overflow-y-auto">
+                  {opts.map(v => (
+                    <button key={v} type="button" onMouseDown={() => { setSearchQuery(v); setSearchDropdownOpen(false); }}
+                      className="w-full flex items-center gap-2 text-left px-3 py-2 text-sm text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                      <History size={14} className="text-slate-400 shrink-0" />
+                      <span className="truncate">{v}</span>
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onMouseDown={clearRecentSearches}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:text-rose-600 hover:bg-slate-50 border-t border-slate-100 transition-colors">
+                  ล้างประวัติการค้นหา
+                </button>
+              </div>
+            ) : null;
+          })()}
         </div>
+        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
+          className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">ทุกหมวดหมู่</option>
+          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {categoryFilter && (
+          <button onClick={() => setCategoryFilter('')} className="px-3 py-1 rounded-full text-xs text-slate-500 border border-slate-200 hover:bg-slate-50">
+            ล้างหมวดหมู่ ×
+          </button>
+        )}
         <span className="text-sm text-slate-500">{filteredAssets.length} รายการ</span>
       </div>
 

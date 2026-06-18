@@ -56,7 +56,7 @@ const menuItems = [
   },
   {
     id: 'supplies',
-    label: 'พัสดุ',
+    label: 'วัสดุ',
     icon: Package,
     href: '/dashboard/supplies',
   },

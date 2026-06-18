@@ -531,3 +531,17 @@ model AssetCheckout {
   @@index([issuedById])
   @@map("asset_checkouts")
 }
+
+// ไฟล์อัปโหลด (รูปภาพ/เอกสาร) เก็บ byte ไว้ในฐานข้อมูลกลาง
+// เพื่อให้ทุกเครื่องที่เชื่อมต่อ DB เดียวกันมองเห็นรูปได้ (ไม่ผูกกับดิสก์เครื่องใดเครื่องหนึ่ง)
+model UploadedFile {
+  id           String   @id @default(cuid())
+  data         Bytes    // MySQL native = LONGBLOB
+  mimeType     String   @db.VarChar(100)
+  fileName     String   @db.VarChar(255)
+  size         Int
+  uploadedById Int?
+  createdAt    DateTime @default(now())
+
+  @@map("uploaded_files")
+}

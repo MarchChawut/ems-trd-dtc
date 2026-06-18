@@ -69,6 +69,9 @@ export default function SuppliesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SupplyType>('STOCK');
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('EMPLOYEE');
   const [error, setError] = useState<string | null>(null);
 
@@ -94,7 +97,7 @@ export default function SuppliesPage() {
   const [isMergeOpen, setIsMergeOpen] = useState(false);
   const [mergeLoading, setMergeLoading] = useState<string | null>(null); // key of group being merged
 
-  // ขอเบิกพัสดุ modal
+  // ขอเบิกวัสดุ modal
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [issueSupply, setIssueSupply] = useState<Supply | null>(null);
   const [issueForm, setIssueForm] = useState({ requesterName: '', quantity: 1, issueDate: '', supplierName: '', documentNumber: '', notes: '' });
@@ -172,6 +175,37 @@ export default function SuppliesPage() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   // ----------------------------------------
+  // Recent searches (localStorage)
+  // ----------------------------------------
+
+  const RECENT_KEY = 'supplies_recent_searches';
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setRecentSearches(parsed.filter(v => typeof v === 'string'));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  function commitSearch(term: string) {
+    const t = term.trim();
+    if (!t) return;
+    setRecentSearches(prev => {
+      const next = [t, ...prev.filter(v => v.toLowerCase() !== t.toLowerCase())].slice(0, 6);
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  function clearRecentSearches() {
+    setRecentSearches([]);
+    try { localStorage.removeItem(RECENT_KEY); } catch { /* ignore */ }
+  }
+
+  // ----------------------------------------
   // Filtered list
   // ----------------------------------------
 
@@ -189,6 +223,7 @@ export default function SuppliesPage() {
 
   const filteredSupplies = supplies.filter(s => {
     if (s.type !== activeTab) return false;
+    if (categoryFilter && s.categoryId !== Number(categoryFilter)) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return s.name.toLowerCase().includes(q) ||
@@ -270,7 +305,7 @@ export default function SuppliesPage() {
                 quantity: qty,
                 documentNumber: formData.documentNumber || null,
                 recipientName: formData.recorderName || null,
-                notes: [formData.notes, 'เพิ่มจากฟอร์มสร้างพัสดุ'].filter(Boolean).join(' — ') || null,
+                notes: [formData.notes, 'เพิ่มจากฟอร์มสร้างวัสดุ'].filter(Boolean).join(' — ') || null,
               }),
             });
             const data = await res.json();
@@ -345,7 +380,7 @@ export default function SuppliesPage() {
   }
 
   async function handleDeleteSupply(id: number) {
-    if (!confirm('ยืนยันการลบพัสดุนี้?')) return;
+    if (!confirm('ยืนยันการลบวัสดุนี้?')) return;
     const res = await fetch(`/api/supplies/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) setSupplies(prev => prev.filter(s => s.id !== id));
@@ -618,8 +653,8 @@ export default function SuppliesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">พัสดุ</h1>
-          <p className="text-slate-500 mt-1 text-sm">จัดการพัสดุคงคลังและไม่คงคลัง</p>
+          <h1 className="text-2xl font-bold text-slate-800">วัสดุ</h1>
+          <p className="text-slate-500 mt-1 text-sm">จัดการวัสดุคงคลังและไม่คงคลัง</p>
         </div>
         <div className="flex items-center gap-2">
           {canManage && (
@@ -634,7 +669,7 @@ export default function SuppliesPage() {
           )}
           {canManage && (
             <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm transition-colors shadow-sm">
-              <Plus size={16} /> เพิ่มพัสดุ
+              <Plus size={16} /> เพิ่มวัสดุ
             </button>
           )}
         </div>
@@ -690,15 +725,52 @@ export default function SuppliesPage() {
       </div>
 
       {/* Search */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 max-w-xs">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10" />
           <input
-            type="text" placeholder="ค้นหาชื่อ, รหัสพัสดุ, เลขที่เอกสาร..."
-            value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+            type="text" placeholder="ค้นหาชื่อ, รหัสวัสดุ, เลขที่เอกสาร..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onFocus={() => setSearchDropdownOpen(true)}
+            onBlur={() => { setTimeout(() => setSearchDropdownOpen(false), 150); commitSearch(searchQuery); }}
+            onKeyDown={e => { if (e.key === 'Enter') { commitSearch(searchQuery); setSearchDropdownOpen(false); } }}
             className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            autoComplete="off"
           />
+          {searchDropdownOpen && (() => {
+            const q = searchQuery.trim().toLowerCase();
+            const opts = recentSearches.filter(v => !q || v.toLowerCase().includes(q));
+            return opts.length > 0 ? (
+              <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+                <div className="px-3 py-1.5 text-xs font-medium text-slate-400 border-b border-slate-100">ค้นหาล่าสุด</div>
+                <div className="max-h-48 overflow-y-auto">
+                  {opts.map(v => (
+                    <button key={v} type="button" onMouseDown={() => { setSearchQuery(v); setSearchDropdownOpen(false); }}
+                      className="w-full flex items-center gap-2 text-left px-3 py-2 text-sm text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                      <History size={14} className="text-slate-400 shrink-0" />
+                      <span className="truncate">{v}</span>
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onMouseDown={clearRecentSearches}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:text-rose-600 hover:bg-slate-50 border-t border-slate-100 transition-colors">
+                  ล้างประวัติการค้นหา
+                </button>
+              </div>
+            ) : null;
+          })()}
         </div>
+        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
+          className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">ทุกหมวดหมู่</option>
+          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {categoryFilter && (
+          <button onClick={() => setCategoryFilter('')} className="px-3 py-1 rounded-full text-xs text-slate-500 border border-slate-200 hover:bg-slate-50">
+            ล้างหมวดหมู่ ×
+          </button>
+        )}
         <span className="text-sm text-slate-500">{filteredSupplies.length} รายการ</span>
       </div>
 
@@ -709,7 +781,7 @@ export default function SuppliesPage() {
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
                 <th className="text-left py-3 px-4 font-semibold text-slate-600">รูปภาพ</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-600">รหัสพัสดุ</th>
+                <th className="text-left py-3 px-4 font-semibold text-slate-600">รหัสวัสดุ</th>
                 <th className="text-left py-3 px-4 font-semibold text-slate-600">รายการ</th>
                 <th className="text-left py-3 px-4 font-semibold text-slate-600">หมวดหมู่</th>
                 <th className="text-center py-3 px-4 font-semibold text-slate-600">คงเหลือ</th>
@@ -722,7 +794,7 @@ export default function SuppliesPage() {
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-400">
                     <Package className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                    ไม่มีข้อมูลพัสดุ
+                    ไม่มีข้อมูลวัสดุ
                   </td>
                 </tr>
               ) : filteredSupplies.map(s => (
@@ -812,7 +884,7 @@ export default function SuppliesPage() {
               <div className="flex items-center gap-3">
                 <div>
                   <h2 className="font-bold text-slate-800 text-base">
-                    {editingSupply ? 'แก้ไขพัสดุ' : 'เพิ่มพัสดุใหม่'}
+                    {editingSupply ? 'แก้ไขวัสดุ' : 'เพิ่มวัสดุใหม่'}
                   </h2>
                 </div>
                 <span className={cn(
@@ -837,16 +909,16 @@ export default function SuppliesPage() {
                   <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-600">{formError}</div>
                 )}
 
-                {/* Section: ข้อมูลพัสดุ */}
+                {/* Section: ข้อมูลวัสดุ */}
                 <div>
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">ข้อมูลพัสดุ</span>
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">ข้อมูลวัสดุ</span>
                     <div className="flex-1 h-px bg-slate-100" />
                   </div>
                   <div className="space-y-3">
-                    {/* ชื่อพัสดุ combobox */}
+                    {/* ชื่อวัสดุ combobox */}
                     <div className="relative">
-                      <label className="block text-sm font-medium text-slate-700 mb-1">ชื่อพัสดุ <span className="text-rose-500">*</span></label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">ชื่อวัสดุ <span className="text-rose-500">*</span></label>
                       <input
                         required
                         value={formData.name}
@@ -881,7 +953,7 @@ export default function SuppliesPage() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">รหัสพัสดุ</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">รหัสวัสดุ</label>
                       <div className="relative">
                         <input value={formData.supplyCode}
                           onChange={e => { setFormData(p => ({ ...p, supplyCode: e.target.value })); setSupplyCodeDropdownOpen(true); }}
@@ -1014,9 +1086,9 @@ export default function SuppliesPage() {
                     <div className="flex-1 h-px bg-slate-100" />
                   </div>
                   <div className="space-y-3">
-                    {/* รูปภาพพัสดุ */}
+                    {/* รูปภาพวัสดุ */}
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">รูปภาพพัสดุ</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">รูปภาพวัสดุ</label>
                       <div className="flex items-start gap-3">
                         <div className="shrink-0">
                           {(imgPreview || formData.imageUrl) && !imgFile ? (
@@ -1141,7 +1213,7 @@ export default function SuppliesPage() {
                       : 'bg-violet-600 hover:bg-violet-700 disabled:bg-violet-400'
                   )}>
                   {formLoading && <Loader2 size={14} className="animate-spin" />}
-                  {editingSupply ? 'บันทึกการแก้ไข' : (formData.type === 'STOCK' ? '+ เพิ่มพัสดุคงคลัง' : '+ เพิ่มพัสดุไม่คงคลัง')}
+                  {editingSupply ? 'บันทึกการแก้ไข' : (formData.type === 'STOCK' ? '+ เพิ่มวัสดุคงคลัง' : '+ เพิ่มวัสดุไม่คงคลัง')}
                 </button>
               </div>
             </form>
@@ -1149,7 +1221,7 @@ export default function SuppliesPage() {
         </div>
       )}
 
-      {/* ===== ขอเบิกพัสดุ Modal ===== */}
+      {/* ===== ขอเบิกวัสดุ Modal ===== */}
       {isIssueModalOpen && issueSupply && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col">
@@ -1159,7 +1231,7 @@ export default function SuppliesPage() {
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                    <Package size={18} className="text-indigo-600" /> ขอเบิกพัสดุ
+                    <Package size={18} className="text-indigo-600" /> ขอเบิกวัสดุ
                   </h2>
                   <p className="text-sm text-slate-600 mt-0.5 font-medium">{issueSupply.name}</p>
                 </div>
@@ -1368,7 +1440,7 @@ export default function SuppliesPage() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
               <div>
-                <h2 className="font-bold text-slate-800">ทำรายการพัสดุ</h2>
+                <h2 className="font-bold text-slate-800">ทำรายการวัสดุ</h2>
                 <p className="text-sm text-slate-500">{selectedSupply.name} — คงเหลือ <strong>{selectedSupply.currentQuantity}</strong> {selectedSupply.unit || ''}</p>
               </div>
               <button onClick={() => setIsTxModalOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={18} /></button>
@@ -1661,7 +1733,7 @@ export default function SuppliesPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
-              <h2 className="font-bold text-slate-800">จัดการหมวดหมู่พัสดุ</h2>
+              <h2 className="font-bold text-slate-800">จัดการหมวดหมู่วัสดุ</h2>
               <button onClick={() => setIsCatModalOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-4">
@@ -1694,7 +1766,7 @@ export default function SuppliesPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Download size={18} className="text-indigo-600" />
-                <h2 className="font-bold text-slate-800">Export รายงานพัสดุ</h2>
+                <h2 className="font-bold text-slate-800">Export รายงานวัสดุ</h2>
               </div>
               <button onClick={() => setIsExportModalOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg">
                 <X size={18} />
@@ -1738,7 +1810,7 @@ export default function SuppliesPage() {
 
               {/* Type selector */}
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">ประเภทพัสดุ</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">ประเภทวัสดุ</label>
                 <div className="grid grid-cols-3 gap-2">
                   {([['all', 'ทั้งหมด'], ['STOCK', 'คงคลัง'], ['NON_STOCK', 'ไม่คงคลัง']] as const).map(([val, label]) => (
                     <button key={val} onClick={() => setExportType(val)}
@@ -1758,17 +1830,17 @@ export default function SuppliesPage() {
                 {exportType === 'all' ? (
                   <>
                     <p className="font-semibold">ไฟล์ Excel จะประกอบด้วย 4 Sheet:</p>
-                    <p>1. คงคลัง (STOCK) — รายการพัสดุคงคลัง ณ ปัจจุบัน</p>
-                    <p>2. ไม่คงคลัง (NON_STOCK) — รายการพัสดุไม่คงคลัง ณ ปัจจุบัน</p>
+                    <p>1. คงคลัง (STOCK) — รายการวัสดุคงคลัง ณ ปัจจุบัน</p>
+                    <p>2. ไม่คงคลัง (NON_STOCK) — รายการวัสดุไม่คงคลัง ณ ปัจจุบัน</p>
                     <p>3. ประวัติการเบิก-รับ — ตามช่วงเวลาที่เลือก</p>
-                    <p>4. สินค้าใกล้หมด — พัสดุที่ต่ำกว่าขั้นต่ำ (STOCK)</p>
+                    <p>4. สินค้าใกล้หมด — วัสดุที่ต่ำกว่าขั้นต่ำ (STOCK)</p>
                   </>
                 ) : (
                   <>
                     <p className="font-semibold">ไฟล์ Excel จะประกอบด้วย 3 Sheet:</p>
-                    <p>1. สรุปพัสดุ — รายการพัสดุทั้งหมด ณ ปัจจุบัน</p>
+                    <p>1. สรุปวัสดุ — รายการวัสดุทั้งหมด ณ ปัจจุบัน</p>
                     <p>2. ประวัติการเบิก-รับ — ตามช่วงเวลาที่เลือก</p>
-                    <p>3. สินค้าใกล้หมด — พัสดุที่ต่ำกว่าขั้นต่ำ (STOCK)</p>
+                    <p>3. สินค้าใกล้หมด — วัสดุที่ต่ำกว่าขั้นต่ำ (STOCK)</p>
                   </>
                 )}
               </div>
