@@ -65,6 +65,17 @@ export const loginSchema = z.object({
 });
 
 /**
+ * Schema สำหรับเริ่ม flow เข้าสู่ระบบด้วย passkey (ระบุเฉพาะ username)
+ */
+export const passkeyLoginSchema = z.object({
+  username: z
+    .string()
+    .min(3, 'ชื่อผู้ใช้ต้องมีอย่างน้อย 3 ตัวอักษร')
+    .max(100, 'ชื่อผู้ใช้ต้องไม่เกิน 100 ตัวอักษร')
+    .regex(/^[a-zA-Z0-9_]+$/, 'ชื่อผู้ใช้ต้องประกอบด้วยตัวอักษร ตัวเลข หรือ underscore เท่านั้น'),
+});
+
+/**
  * Schema สำหรับตรวจสอบการสร้างผู้ใช้ใหม่
  */
 export const createUserSchema = z.object({

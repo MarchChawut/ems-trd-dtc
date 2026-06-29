@@ -40,6 +40,7 @@ model User {
   leaves    Leave[]  // รายการลาของผู้ใช้
   sessions  Session[] // Session สำหรับการเข้าสู่ระบบ
   loginAttempts LoginAttempt[] // ประวัติการพยายามเข้าสู่ระบบ
+  authenticators Authenticator[] // Passkey (WebAuthn) ที่ลงทะเบียนไว้
   supplyTransactions SupplyTransaction[] @relation("TxPerformer")
   checkoutsHeld      AssetCheckout[]     @relation("CheckoutHolder")
   checkoutsIssued    AssetCheckout[]     @relation("CheckoutIssuer")
@@ -91,6 +92,45 @@ model LoginAttempt {
   @@index([ipAddress, createdAt])
   @@index([username, createdAt])
   @@map("login_attempts")
+}
+
+// ============================================
+// Model: Authenticator - Passkey (WebAuthn credential)
+// เก็บ public key ของอุปกรณ์ที่ลงทะเบียนไว้สำหรับเข้าสู่ระบบด้วย passkey
+// ============================================
+model Authenticator {
+  id           Int      @id @default(autoincrement())
+  credentialId String   @unique @db.VarChar(255) // base64url ของ credential ID
+  publicKey    String   @db.Text // public key เข้ารหัสเป็น base64url
+  counter      Int      @default(0) // ตัวนับการใช้งาน ป้องกัน replay attack
+  transports   String?  @db.VarChar(255) // ช่องทางการเชื่อมต่อ คั่นด้วย comma (usb,nfc,internal,...)
+  deviceType   String?  @db.VarChar(32) // singleDevice | multiDevice
+  backedUp     Boolean  @default(false) // ถูก sync/backup ไปยัง cloud หรือไม่
+  name         String?  @db.VarChar(100) // ชื่อที่ผู้ใช้ตั้งให้ เช่น "MacBook Touch ID"
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
+  @@map("authenticators")
+}
+
+// ============================================
+// Model: WebAuthnChallenge - challenge ชั่วคราวสำหรับ flow ลงทะเบียน/เข้าสู่ระบบ passkey
+// อ้างอิงด้วย id ที่เก็บใน cookie ชั่วคราว ใช้ครั้งเดียวแล้วลบทิ้ง
+// ============================================
+model WebAuthnChallenge {
+  id        String   @id @default(cuid())
+  challenge String   @db.VarChar(255)
+  userId    Int? // ผู้ใช้ที่เกี่ยวข้อง (ลงทะเบียน = เจ้าของ session, login = ผู้ใช้เป้าหมาย)
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("webauthn_challenges")
 }
 
 // ============================================

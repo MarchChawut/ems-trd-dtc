@@ -1,6 +1,6 @@
 # CODEBASE MAP — EMS Admin (ems-trd-dtc)
 
-> Generated: 2026-05-29  
+> Generated: 2026-06-06  
 > Purpose: Context reference for feature development
 
 ---
@@ -10,10 +10,12 @@
 **Employee Management System (EMS)** — a Thai government-context internal HR tool built as a Next.js 16 fullstack application. Deployed on Synology NAS with MariaDB. All UI is in Thai.
 
 Core modules:
-- **Authentication** — custom session-based auth with brute-force protection
+- **Authentication** — custom session-based auth with DB-backed brute-force protection
 - **Employees** — CRUD, profile images, import from CSV
 - **Leaves** — Thai-gov–style leave requests, PDF generation, fiscal-year statistics
 - **Kanban Tasks** — draggable column board with assignees and reminders
+- **Supplies (พัสดุ)** — STOCK/NON_STOCK inventory, transaction history (receive/return/adjust), Excel export
+- **Assets (ครุภัณฑ์)** — asset registry, checkout/return tracking, inspection records, Excel export
 - **Dashboard** — leave statistics with charts (Recharts), per-user summaries
 
 ---
@@ -28,10 +30,12 @@ Core modules:
 | Icons | lucide-react |
 | Charts | Recharts 3 |
 | PDF | @react-pdf/renderer 4 |
+| Excel | ExcelJS 4 (supplies export), xlsx 0.18 (assets export) |
 | ORM | Prisma 5 |
 | Database | MariaDB 10.11 (Docker on Synology NAS) |
 | Validation | Zod 3 |
-| Auth | Custom session tokens (bcryptjs + cookie) |
+| Auth | Custom session tokens (bcryptjs + HttpOnly cookie) |
+| File Upload | Magic-byte MIME detection via `file-type` |
 | Build | pnpm, tsx (seed/scripts), Turbopack (dev) |
 
 ---
@@ -41,102 +45,110 @@ Core modules:
 ```
 ems-trd-dtc/
 ├── .env                          # DATABASE_URL, NEXTAUTH_SECRET, NEXTAUTH_URL
-├── .gitignore
+├── .gitignore                    # Excludes .claude/, backups/, .env, node_modules, etc.
 ├── next.config.js                # Security headers (HSTS, CSP, etc.), canvas alias
 ├── tailwind.config.ts
 ├── tsconfig.json
-├── tsconfig.seed.json            # Separate tsconfig for seed script
+├── tsconfig.seed.json
 ├── docker-compose.yml            # MariaDB 10.11 + phpMyAdmin (optional profile)
 ├── empty-module.js               # Canvas alias for @react-pdf/renderer
 ├── package.json
 │
 ├── prisma/
 │   ├── schema.prisma             # All DB models + enums (see §5)
-│   ├── seed.ts                   # Initial data seeder
-│   └── migrations/
-│       ├── 20260204_init/
-│       ├── 20260204_add_kanban_columns/
-│       ├── 20260209_add_leave_features/
-│       ├── 20260209_change_position/
-│       ├── 20260211_add_task_reminder_archive/
-│       ├── 20260403_add_phone_address_early_leave/
-│       ├── 20260404_add_contact_address_to_leave/
-│       └── 20260408_add_birthday_to_users/
+│   ├── seed.ts
+│   └── migrations/               # Historical migrations (pre-supplies/assets)
 │
 ├── scripts/
 │   └── backup.ts                 # DB backup utility
 │
-├── dist-seed/                    # Compiled seed (JS) used by prisma seed command
-│
-├── public/                       # Static assets
+├── public/
+│   └── uploads/
+│       └── documents/            # Uploaded PDFs and images (gitignored)
 │
 └── src/
-    ├── proxy.ts                  # Middleware-like proxy helper (HTTPS redirect, CORS)
+    ├── proxy.ts                  # HTTPS redirect, CORS helper
     ├── types/
-    │   └── index.ts              # All TypeScript interfaces and types
+    │   └── index.ts              # All TypeScript interfaces and types (see §6)
     │
     ├── lib/
-    │   ├── prisma.ts             # Prisma client singleton (global in dev)
-    │   ├── auth.ts               # requireAuth, checkRole, getCurrentUser, validateSession
-    │   ├── security.ts           # hashPassword, verifyPassword, Zod schemas, sanitizeInput
-    │   ├── rate-limit-db.ts      # DB-backed rate limiter (DatabaseRateLimiter class)
+    │   ├── prisma.ts             # Prisma client singleton
+    │   ├── auth.ts               # requireAuth, checkRole, isAdmin, isManagerOrAbove
+    │   ├── security.ts           # hashPassword, Zod schemas, sanitizeInput, generateSecureToken
+    │   ├── rate-limit-db.ts      # DB-backed rate limiter (DatabaseRateLimiter)
     │   ├── logger.ts             # Structured logger (dev: pretty, prod: JSON)
-    │   └── utils.ts              # cn(), formatDate, toBuddhistYear, formatSignatureName, etc.
+    │   └── utils.ts              # cn(), formatDate, toBuddhistYear, etc.
     │
     ├── components/
     │   └── leaves/
-    │       ├── LeaveForm.tsx     # Thai-gov leave form (print view + PDF trigger)
-    │       ├── LeaveFormPDF.tsx  # @react-pdf/renderer PDF layout
-    │       └── pdf-fonts.ts      # Thai font registration for PDF
+    │       ├── LeaveForm.tsx
+    │       ├── LeaveFormPDF.tsx
+    │       └── pdf-fonts.ts
     │
     └── app/
         ├── globals.css
-        ├── layout.tsx            # Root layout (Inter font, metadata, SEO blocked)
+        ├── layout.tsx
         ├── page.tsx              # Login page (/)
         │
         ├── dashboard/
-        │   ├── layout.tsx        # Sidebar + Header shell (session check on mount)
-        │   ├── page.tsx          # Main dashboard — leave stats charts + summary table
-        │   ├── employees/
-        │   │   └── page.tsx      # Employee list, CRUD modal, CSV import, profile image
-        │   ├── leaves/
-        │   │   └── page.tsx      # Leave requests table, approve/reject, PDF, CSV export
-        │   └── tasks/
-        │       └── page.tsx      # Kanban board with drag-and-drop columns
+        │   ├── layout.tsx        # Sidebar + Header shell
+        │   ├── page.tsx          # Dashboard — leave stats + summary
+        │   ├── employees/page.tsx
+        │   ├── leaves/page.tsx
+        │   ├── tasks/page.tsx    # Kanban board
+        │   ├── supplies/page.tsx # พัสดุ — inventory, transactions, export
+        │   └── assets/page.tsx   # ครุภัณฑ์ — registry, checkout, inspection, export
         │
         └── api/
             ├── auth/
-            │   ├── login/route.ts     # POST — credential check, session creation, rate limit
-            │   ├── logout/route.ts    # POST — invalidate session cookie
-            │   └── session/route.ts   # GET — validate current session
+            │   ├── login/route.ts
+            │   ├── logout/route.ts
+            │   └── session/route.ts
             ├── users/
-            │   ├── route.ts           # GET list / POST create
-            │   ├── [id]/route.ts      # GET / PATCH / DELETE single user
-            │   ├── import/route.ts    # POST — bulk CSV import
-            │   └── upload-profile/route.ts  # POST — profile image upload
+            │   ├── route.ts
+            │   ├── [id]/route.ts
+            │   ├── import/route.ts
+            │   └── upload-profile/route.ts
             ├── leaves/
-            │   ├── route.ts           # GET list / POST create
-            │   ├── [id]/route.ts      # GET / PATCH / DELETE single leave
-            │   ├── dashboard/route.ts # GET — leave stats for employee view
-            │   ├── export/route.ts    # GET — CSV export with column selection
-            │   ├── search/route.ts    # GET — full-text search
-            │   └── statistics/route.ts # GET — leave counts per type per user
+            │   ├── route.ts
+            │   ├── [id]/route.ts
+            │   ├── dashboard/route.ts
+            │   ├── export/route.ts
+            │   ├── search/route.ts
+            │   └── statistics/route.ts
             ├── tasks/
-            │   ├── route.ts           # GET list / POST create
-            │   └── [id]/route.ts      # GET / PATCH / DELETE single task
+            │   ├── route.ts
+            │   └── [id]/route.ts
             ├── columns/
-            │   ├── route.ts           # GET / POST kanban columns
-            │   ├── [id]/route.ts      # PATCH / DELETE single column
-            │   └── reorder/route.ts   # POST — reorder column positions
+            │   ├── route.ts
+            │   ├── [id]/route.ts
+            │   └── reorder/route.ts
             ├── dashboard/
-            │   ├── route.ts           # GET — aggregate stats (users, tasks, leaves)
-            │   └── leave-stats/route.ts  # GET — fiscal-year leave breakdown
-            ├── departments/route.ts   # GET / POST / PATCH / DELETE
-            ├── positions/route.ts     # GET / POST / PATCH / DELETE
-            ├── position-seconds/route.ts # GET / POST / PATCH / DELETE
-            ├── holidays/route.ts      # GET / POST / PATCH / DELETE
-            ├── leave-rules/route.ts   # GET / POST / PATCH active leave rules
-            └── health/route.ts        # GET — health check
+            │   ├── route.ts
+            │   └── leave-stats/route.ts
+            ├── supplies/
+            │   ├── route.ts           # GET list / POST create
+            │   ├── [id]/route.ts      # GET / PATCH / DELETE
+            │   ├── export/route.ts    # GET — Excel (2–3 sheets, split by type)
+            │   └── merge/route.ts     # POST — merge duplicate supplies
+            ├── supply-categories/route.ts
+            ├── supply-transactions/route.ts  # GET list / POST (receive/return/adjust)
+            ├── assets/
+            │   ├── route.ts           # GET list / POST create
+            │   ├── [id]/route.ts      # GET / PATCH / DELETE
+            │   └── export/route.ts    # GET — Excel (assets + checkout history sheets)
+            ├── asset-categories/route.ts
+            ├── asset-checkouts/
+            │   ├── route.ts           # GET list / POST checkout
+            │   └── [id]/route.ts      # PATCH return
+            ├── uploads/
+            │   └── document/route.ts  # POST — file upload (magic-byte MIME check)
+            ├── departments/route.ts
+            ├── positions/route.ts
+            ├── position-seconds/route.ts
+            ├── holidays/route.ts
+            ├── leave-rules/route.ts
+            └── health/route.ts
 ```
 
 ---
@@ -144,177 +156,134 @@ ems-trd-dtc/
 ## 4. Module Dependency Diagram
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Browser / Client                   │
-│  page.tsx (login) → dashboard/layout.tsx             │
-│      ├── dashboard/page.tsx                          │
-│      ├── employees/page.tsx                          │
-│      ├── leaves/page.tsx ──► LeaveForm.tsx           │
-│      │                           └── LeaveFormPDF.tsx│
-│      │                               └── pdf-fonts.ts│
-│      └── tasks/page.tsx                              │
-└──────────────────┬──────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                   Browser / Client                       │
+│  page.tsx (login) → dashboard/layout.tsx                 │
+│      ├── dashboard/page.tsx                              │
+│      ├── employees/page.tsx                              │
+│      ├── leaves/page.tsx ──► LeaveForm.tsx               │
+│      ├── tasks/page.tsx                                  │
+│      ├── supplies/page.tsx   (inventory + transactions)  │
+│      └── assets/page.tsx     (registry + checkout)       │
+└──────────────────┬──────────────────────────────────────┘
                    │ fetch()
                    ▼
-┌──────────────────────────────────────────────────────┐
-│                  Next.js API Routes                   │
-│                                                       │
-│  /api/auth/*  /api/users/*  /api/leaves/*             │
-│  /api/tasks/* /api/columns/* /api/dashboard/*         │
-│  /api/departments  /api/positions  /api/holidays      │
-│  /api/leave-rules  /api/health                        │
-│                                                       │
-│  All routes use:                                      │
-│    lib/auth.ts ──────────────────────────────────┐    │
-│    lib/security.ts (Zod schemas, sanitize) ──────┤    │
-│    lib/rate-limit-db.ts (login route only) ──────┤    │
-│    lib/logger.ts ────────────────────────────────┤    │
-│    lib/utils.ts (helpers) ───────────────────────┘    │
-└──────────────────┬───────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                  Next.js API Routes                       │
+│                                                          │
+│  /api/auth/*    /api/users/*    /api/leaves/*            │
+│  /api/tasks/*   /api/columns/*  /api/dashboard/*         │
+│  /api/supplies/* /api/supply-categories                  │
+│  /api/supply-transactions                                │
+│  /api/assets/*  /api/asset-categories                    │
+│  /api/asset-checkouts/*  /api/uploads/document           │
+│  /api/departments  /api/positions  /api/holidays         │
+│  /api/leave-rules  /api/health                           │
+│                                                          │
+│  All routes use:                                         │
+│    lib/auth.ts ───────────────────────────────────┐      │
+│    lib/security.ts (Zod schemas, sanitize) ───────┤      │
+│    lib/rate-limit-db.ts (login route only) ───────┤      │
+│    lib/logger.ts ─────────────────────────────────┤      │
+│    lib/utils.ts (helpers) ────────────────────────┘      │
+└──────────────────┬───────────────────────────────────────┘
                    │ Prisma Client
                    ▼
-┌──────────────────────────────────────────────────────┐
-│  lib/prisma.ts (singleton)                            │
-│        │                                             │
-│        ▼                                             │
-│  MariaDB 10.11 (Docker / Synology NAS)               │
-│    tables: users, sessions, login_attempts,           │
-│            tasks, kanban_columns,                     │
-│            leaves, leave_rules,                       │
-│            departments, positions, position_seconds,  │
-│            holidays                                   │
-└──────────────────────────────────────────────────────┘
-
-lib/auth.ts  depends on: prisma.ts, types/index.ts
-lib/security.ts  depends on: bcryptjs, zod  (standalone)
-lib/rate-limit-db.ts  depends on: prisma.ts, logger.ts
-lib/utils.ts  depends on: clsx, tailwind-merge  (standalone)
-LeaveForm.tsx  depends on: LeaveFormPDF.tsx, pdf-fonts.ts, lib/utils.ts, types/index.ts
+┌──────────────────────────────────────────────────────────┐
+│  lib/prisma.ts (singleton)                                │
+│        │                                                 │
+│        ▼                                                 │
+│  MariaDB 10.11 (Docker / Synology NAS)                   │
+│    tables: users, sessions, login_attempts,               │
+│            tasks, kanban_columns,                         │
+│            leaves, leave_rules,                           │
+│            departments, positions, position_seconds,      │
+│            holidays,                                      │
+│            supply_categories, supplies,                   │
+│            supply_transactions,                           │
+│            asset_categories, assets, asset_checkouts      │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 5. Database Models & Enums
 
-### Models
-
-| Model | Key Fields | Relations |
-|---|---|---|
-| **User** | id, email, username, password, prefix, name, role, department, division, position, positionSecond, positionLevel, phone, birthday, address, avatar, profileImage, isActive | → tasks, leaves, sessions, loginAttempts |
-| **Session** | id, userId, token (unique), expiresAt, ipAddress, isValid | → User |
-| **LoginAttempt** | id, userId?, username, ipAddress, success, reason | → User? |
-| **KanbanColumn** | id, name, color, order, isDefault | → tasks |
-| **Task** | id, title, description, columnId, priority, assigneeId, reminderAt, archivedAt | → KanbanColumn, User? |
-| **Leave** | id, userId, type, startDate, endDate, reason, status, isHalfDay, hours, totalDays, contactAddress | → User |
-| **LeaveRule** | id, name, startTime, endTime, fullDayHours, halfDayHours, maxConsecutiveDays, isActive | — |
-| **Department** | id, name, description, isActive, order | — |
-| **Position** | id, name, description, isActive, order | — |
-| **PositionSecond** | id, name, hasLevel, maxLevel, isActive, order | — |
-| **Holiday** | id, date (unique), name, year, isActive | — |
-
 ### Enums
 
 | Enum | Values |
 |---|---|
-| Role | SUPER_ADMIN, ADMIN, MANAGER, EMPLOYEE, HR |
-| Priority | LOW, MEDIUM, HIGH, URGENT |
-| LeaveType | SICK, PERSONAL, VACATION, MATERNITY, ORDINATION, EARLY_LEAVE, OTHER |
-| LeaveStatus | PENDING, APPROVED, REJECTED |
+| **Role** | SUPER_ADMIN, ADMIN, MANAGER, HR, EMPLOYEE |
+| **Priority** | LOW, MEDIUM, HIGH, URGENT |
+| **LeaveType** | SICK, PERSONAL, VACATION, MATERNITY, ORDINATION, EARLY_LEAVE, OTHER |
+| **LeaveStatus** | PENDING, APPROVED, REJECTED |
+| **SupplyType** | STOCK, NON_STOCK |
+| **TransactionType** | RECEIVE, ISSUE, RETURN, ADJUST |
+| **AssetStatus** | AVAILABLE, IN_USE, IN_REPAIR, RETURNED, DISPOSED |
+| **AssetCondition** | EXCELLENT, GOOD, FAIR, POOR, DAMAGED |
+
+### Models
+
+| Model | Key Fields | Relations |
+|---|---|---|
+| **User** | id, email, username, password, prefix, name, role, department, division, position, positionSecond, positionLevel, phone, birthday, address, avatar, profileImage, isActive | → tasks, leaves, sessions, loginAttempts, supplyTransactions, checkoutsHeld, checkoutsIssued, assetsHeld |
+| **Session** | id, userId, token (unique), expiresAt, ipAddress, userAgent, isValid | → User |
+| **LoginAttempt** | id, userId?, username, ipAddress, success, reason | → User? |
+| **KanbanColumn** | id, name, color, order, isDefault | → tasks |
+| **Task** | id, title, description, columnId, priority, assigneeId, reminderAt, archivedAt | → KanbanColumn, User? |
+| **Leave** | id, userId, type, startDate, endDate, reason, status, approvedBy, approvedAt, isHalfDay, hours, totalDays, contactAddress | → User |
+| **LeaveRule** | id, name, startTime, endTime, fullDayHours, halfDayHours, maxConsecutiveDays, isActive | — |
+| **Department** | id, name, description, isActive, order | — |
+| **Position** | id, name, description, isActive, order | — |
+| **PositionSecond** | id, name, hasLevel, maxLevel, isActive, order | — |
+| **Holiday** | id, date (unique), name, description, year, isActive | — |
+| **SupplyCategory** | id, name, description, isActive, order | → supplies |
+| **Supply** | id, name, type (STOCK/NON_STOCK), categoryId, supplyCode, unit, currentQuantity, minimumQuantity, maximumQuantity, thresholdRed, thresholdYellow, supplier, unitPrice, documentNumber, documentUrl, imageUrl, issueDate, recorderName, notes, isActive | → category, transactions |
+| **SupplyTransaction** | id, supplyId, type, quantity, quantityBefore, quantityAfter, documentNumber, documentUrl, recipientName, returnerName, returnReceiverName, adjusterName, notes, performedById | → supply, performedBy |
+| **AssetCategory** | id, name, description, isActive, order | → assets |
+| **Asset** | id, name, assetTag (unique), serialNumber, model, brand, categoryId, status, condition, currentHolderId, acquisitionDate, acquisitionCost, documentNumber, documentUrl, location, department, imageUrl, notes, isActive, receiverName, lastInspectionDate, lastInspectionCondition, lastInspectedBy | → category, currentHolder, checkouts |
+| **AssetCheckout** | id, assetId, holderId, issuedById, checkedOutAt, returnedAt, expectedReturnAt, notes | → asset, holder, issuedBy |
 
 ---
 
-## 6. Data Flow: DB → API → Frontend
+## 6. TypeScript Types (`src/types/index.ts`)
 
-### Authentication Flow
-```
-[Login Page]
-  │ POST /api/auth/login {username, password}
-  ▼
-[API] Zod validate → dbRateLimit.isRateLimited(ip)
-  │ prisma.user.findUnique({username})
-  │ bcrypt.compare(password, hash)
-  │ prisma.session.create({token, expiresAt})
-  │ Set HttpOnly cookie: session_token
-  ▼
-[Client] cookie stored → router.push('/dashboard')
-  │
-  │ All subsequent API calls: cookie sent automatically
-  ▼
-[API] requireAuth(request) → prisma.session.findUnique({token})
-  │ checks: session.isValid, expiresAt, user.isActive
-  ▼
-returns SessionUser { id, email, username, name, role, avatar }
-```
+### User & Auth
+`UserRole`, `User`, `Department`, `Position`, `PositionSecond`, `SessionUser`, `CreateUserInput`, `UpdateUserInput`, `LoginInput`, `LoginResponse`, `ChangePasswordInput`
 
-### Leave Request Flow
-```
-[Leaves Page]
-  │ POST /api/leaves {type, startDate, endDate, reason, ...}
-  ▼
-[API] requireAuth → createLeaveSchema.safeParse → sanitizeInput
-  │ prisma.leave.create({userId: currentUser.id, ...})
-  ▼
-[DB] leaves table — status: PENDING
-  │
-  │ Manager/Admin: PATCH /api/leaves/[id] {status: APPROVED}
-  ▼
-[DB] leaves.status updated, approvedBy, approvedAt set
-  │
-  │ GET /api/leaves/export?columns=...&startDate=...
-  ▼
-[API] prisma.leave.findMany + CSV serialization → stream to browser
-  │
-  │ LeaveForm.tsx receives Leave + User data
-  ▼
-[PDF] generateLeavePDF() → @react-pdf/renderer → browser download
-```
+### Tasks
+`TaskPriority`, `KanbanColumn`, `Task`, `CreateTaskInput`, `UpdateTaskInput`
 
-### Dashboard Stats Flow
-```
-[Dashboard Page]
-  │ GET /api/dashboard  (summary counts)
-  │ GET /api/dashboard/leave-stats?fiscalYear=...&type=...
-  ▼
-[API] /api/dashboard:
-  │ prisma.user.count(), prisma.leave.count(), prisma.task.count()
-  │ prisma.kanbanColumn.findMany({ include: { _count: tasks }})
-  ▼
-[API] /api/dashboard/leave-stats:
-  │ Computes fiscal year range (Oct 1 – Sep 30)
-  │ prisma.leave.findMany({where: {startDate: {gte, lte}, status: APPROVED}})
-  │ Groups by user, by type, by month → returns chartData, userSummaries, leaves[]
-  ▼
-[Frontend] Recharts BarChart (horizontal, grouped by person)
-  │ filteredLeaves memo (by selectedMonth)
-  │ chartDataByPerson memo
-  │ userTableData memo (sorted by totalDays desc)
-```
+### Leaves
+`LeaveType`, `LeaveStatus`, `Leave`, `CreateLeaveInput`, `UpdateLeaveInput`
+
+### Supplies *(added 2026-06)*
+`SupplyType`, `TransactionType`, `SupplyCategory`, `Supply`, `SupplyTransaction`, `CreateSupplyInput`, `CreateTransactionInput`
+
+### Assets *(added 2026-06)*
+`AssetStatus`, `AssetCondition`, `AssetCategory`, `Asset`, `AssetCheckout`, `CreateAssetInput`, `CreateCheckoutInput`
+
+### API & UI Utilities
+`ApiResponse<T>`, `ApiError`, `DashboardStats`, `RecentActivity`, `ChildrenProps`, `ModalProps`, `FormStatus`, `FormErrors`, `FormState<T>`
 
 ---
 
-## 7. Config Files & Environment Variables
+## 7. Zod Schemas (`src/lib/security.ts`)
 
-### `.env` (required variables)
-```
-DATABASE_URL=mysql://user:pass@host:3306/ems_db
-NEXTAUTH_SECRET=<random-secret>
-NEXTAUTH_URL=http://localhost:3000
-NODE_ENV=development|production
-COOKIE_SAMESITE=strict|lax|none   (optional)
-```
+| Schema | Validates |
+|---|---|
+| `loginSchema` | username (alphanum+_, 3-100), password (8-128) |
+| `createUserSchema` | email, username, password (upper+lower+digit), prefix, name, role, department |
+| `createTaskSchema` | title (1-255), description (max 1000), priority enum, columnId, assigneeId |
+| `createLeaveSchema` | type enum, startDate/endDate (YYYY-MM-DD), reason (1-500), isHalfDay, hours, contactAddress; endDate ≥ startDate |
+| `createSupplyCategorySchema` | name (1-100), description (max 255), order int |
+| `createSupplySchema` | name, type enum, categoryId, supplyCode, unit, quantities, thresholds (1-99%), supplier, dates, unitPrice, documentNumber, imageUrl, notes |
+| `createTransactionSchema` | supplyId, type enum, quantity (positive int), documentNumber, recipientName, returnerName, returnReceiverName, adjusterName, notes |
+| `createAssetCategorySchema` | name (1-100), description, order |
+| `createAssetSchema` | name, assetTag, serialNumber, model, brand, categoryId, status/condition enums, acquisitionDate (YYYY-MM-DD), documentNumber, location, department, imageUrl, notes, receiverName, lastInspectionDate, lastInspectionCondition, lastInspectedBy |
+| `createCheckoutSchema` | assetId, holderId, issuedById (optional override), expectedReturnAt, notes |
 
-### `next.config.js`
-- Security headers: HSTS, X-Frame-Options, CSP, nosniff, XSS-Protection
-- Turbopack + webpack `canvas: false` alias (for @react-pdf/renderer)
-- `poweredByHeader: false`
-
-### `docker-compose.yml`
-- `mariadb` service: MariaDB 10.11, utf8mb4, 256M InnoDB buffer
-- `phpmyadmin` service: optional, activated with `--profile admin`
-- Port: 3306 (DB), 8080 (phpMyAdmin)
-
-### `tailwind.config.ts`
-- Extended with `tailwindcss-animate` plugin
+**Security utilities:** `hashPassword`, `verifyPassword`, `sanitizeInput`, `generateSecureToken` (uses `crypto.randomBytes`), `generateAvatarInitials`
 
 ---
 
@@ -330,31 +299,41 @@ Session table in DB (token unique, expiresAt, isValid)
 requireAuth() — called in every protected API route
   checks: token exists → session valid → not expired → user.isActive
 
-Rate limiting: DatabaseRateLimiter
+Rate limiting: DatabaseRateLimiter (rate-limit-db.ts)
   – counts failed loginAttempts by IP in last 30 min
-  – blocks at 5 failures (MAX_LOGIN_ATTEMPTS)
+  – blocks at 5 failures
   – clears on successful login
 
 Password: bcryptjs, 12 salt rounds
 
-Input validation: Zod schemas in security.ts
-  – loginSchema, createUserSchema, createTaskSchema, createLeaveSchema
+Session tokens: crypto.randomBytes() — cryptographically secure CSPRNG
+
+Input validation: Zod schemas (security.ts) on all write endpoints
+
+File uploads: magic-byte MIME detection via `file-type` package
+  – rejects spoofed MIME types regardless of Content-Type header
+  – allowed: PDF (10 MB), JPEG/PNG/WebP (5 MB)
 
 XSS: sanitizeInput() — HTML entity encoding
-SQL injection: parameterized queries via Prisma (ORM) — no raw SQL
+SQL injection: parameterized queries via Prisma — no raw SQL
+
+Role field protection: non-admin users cannot update position, department,
+  division, positionLevel via PATCH /api/users/[id]
 ```
 
 ---
 
 ## 9. Role-Based Access Control
 
-| Role | Can see own leaves | Can see all leaves | Approve leaves | Manage users | Admin |
+| Action | EMPLOYEE | HR | MANAGER | ADMIN | SUPER_ADMIN |
 |---|---|---|---|---|---|
-| EMPLOYEE | ✓ | ✗ | ✗ | ✗ | ✗ |
-| HR | ✓ | ✓ | ✗ | ✗ | ✗ |
-| MANAGER | ✓ | ✓ | ✓ | ✗ | ✗ |
-| ADMIN | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SUPER_ADMIN | ✓ | ✓ | ✓ | ✓ | ✓ |
+| View own leaves | ✓ | ✓ | ✓ | ✓ | ✓ |
+| View all leaves | ✗ | ✓ | ✓ | ✓ | ✓ |
+| Approve leaves | ✗ | ✗ | ✓ | ✓ | ✓ |
+| Manage users | ✗ | ✗ | ✗ | ✓ | ✓ |
+| Manage supplies & assets | ✗ | ✗ | ✓ | ✓ | ✓ |
+| Export reports | ✗ | ✗ | ✓ | ✓ | ✓ |
+| Edit org fields (position/dept) | ✗ | ✗ | ✗ | ✓ | ✓ |
 
 Helper functions in `lib/auth.ts`:
 - `isAdmin(role)` — ADMIN or SUPER_ADMIN
@@ -363,60 +342,139 @@ Helper functions in `lib/auth.ts`:
 
 ---
 
-## 10. Technical Debt & Notable Issues
+## 10. Key Data Flows
+
+### Supply Transaction Flow
+```
+[Supplies Page]
+  │ POST /api/supply-transactions {supplyId, type, quantity, ...}
+  ▼
+[API] requireAuth → isManagerOrAbove → createTransactionSchema.safeParse
+  │ prisma.$transaction:
+  │   supply.findUnique → check quantity sufficient (for ISSUE)
+  │   supply.update({currentQuantity: newQty})
+  │   supplyTransaction.create({...})
+  ▼
+[DB] supply.currentQuantity updated; supply_transactions row created
+  │
+  │ GET /api/supplies/export?type=all&period=month
+  ▼
+[API] ExcelJS workbook:
+  Sheet 1: คงคลัง (STOCK)
+  Sheet 2: ไม่คงคลัง (NON_STOCK)   ← only when type=all
+  Sheet 3: ประวัติการเบิก-รับ
+  Sheet 4: สินค้าใกล้หมด
+```
+
+### Asset Checkout Flow
+```
+[Assets Page]
+  │ POST /api/asset-checkouts {assetId, holderId, issuedById?, ...}
+  ▼
+[API] requireAuth → isManagerOrAbove → createCheckoutSchema.safeParse
+  │ prisma.$transaction:
+  │   asset.findUnique → check status === AVAILABLE
+  │   user.findUnique(holderId) → check isActive
+  │   assetCheckout.create({issuedById: override ?? authUser.id})
+  │   asset.update({status: IN_USE, currentHolderId: holderId})
+  ▼
+[DB] asset.status = IN_USE; asset_checkouts row created
+  │
+  │ PATCH /api/asset-checkouts/[id] → return asset
+  ▼
+[DB] assetCheckout.returnedAt = now; asset.status = AVAILABLE
+```
+
+### Authentication Flow
+```
+[Login Page]
+  │ POST /api/auth/login {username, password}
+  ▼
+[API] Zod validate → dbRateLimit.isRateLimited(ip)
+  │ user.findUnique({username}) → bcrypt.compare(password, hash)
+  │ session.create({token: crypto.randomBytes(), expiresAt: +24h})
+  │ Set HttpOnly cookie: session_token
+  ▼
+[Client] cookie stored → router.push('/dashboard')
+  │ All subsequent calls: cookie sent automatically
+  ▼
+[API] requireAuth(request) → session.findUnique({token})
+  │ checks: session.isValid, expiresAt, user.isActive
+  ▼
+returns SessionUser { id, email, username, name, role, avatar }
+```
+
+---
+
+## 11. Config & Environment
+
+### `.env` (required variables)
+```
+DATABASE_URL=mysql://user:pass@host:3306/ems_db
+NEXTAUTH_SECRET=<openssl rand -base64 32>
+NEXTAUTH_URL=http://localhost:3000
+NODE_ENV=development|production
+COOKIE_SAMESITE=strict|lax|none   (optional)
+```
+
+### `next.config.js`
+- Security headers: HSTS (2yr), X-Frame-Options, X-Content-Type-Options, XSS-Protection, Referrer-Policy, CSP
+- Turbopack + webpack `canvas: false` alias
+- `poweredByHeader: false`
+
+### `docker-compose.yml`
+- `mariadb` service: MariaDB 10.11, utf8mb4, 256M InnoDB buffer — port 3306
+- `phpmyadmin` service: optional `--profile admin` — port 8080
+
+---
+
+## 12. Dependencies
+
+### Production
+| Package | Version | Purpose |
+|---|---|---|
+| next | ^16.0.0 | Framework |
+| react / react-dom | ^19.0.0 | UI |
+| prisma / @prisma/client | ^5.7.0 | ORM |
+| zod | ^3.22.4 | Validation |
+| bcryptjs | ^2.4.3 | Password hashing |
+| exceljs | ^4.4.0 | Supplies Excel export (styled) |
+| xlsx | ^0.18.5 | Assets Excel export |
+| file-type | ^22.0.1 | Server-side MIME detection for uploads |
+| @react-pdf/renderer | ^4.3.2 | Leave PDF generation |
+| recharts | ^3.7.0 | Dashboard charts |
+| lucide-react | ^0.563.0 | Icons |
+| tailwind-merge / clsx | ^2.2.0 / ^2.0.0 | Class utilities |
+| @radix-ui/* | various | Accessible UI primitives |
+| isomorphic-dompurify | ^2.0.0 | XSS sanitization |
+
+### Dev
+| Package | Version |
+|---|---|
+| typescript | ^5.9.3 |
+| tailwindcss | ^3.4.0 |
+| prisma (CLI) | ^5.7.0 |
+| tsx | ^4.7.0 |
+| @types/node, react, bcryptjs | various |
+
+---
+
+## 13. Technical Debt & Known Issues
 
 | Location | Issue | Severity |
 |---|---|---|
-| `src/lib/security.ts:196` | In-memory `loginAttempts` Map still exists alongside the DB-backed `rate-limit-db.ts`. The in-memory one is **unused** in API routes but still exported — dead code and confusing. | Low |
-| `src/proxy.ts:27` | Comment says production should specify an explicit domain for CORS/HTTPS redirect. Currently allows wildcard. | Medium |
-| `src/app/api/leaves/route.ts:49` | `where: any` — loose typing on Prisma where clause. Should be `Prisma.LeaveWhereInput`. | Low |
+| `next.config.js:44` | CSP includes `'unsafe-inline'` and `'unsafe-eval'` — weakens XSS protection. Requires nonce-based CSP or isolating the library that needs eval. | High |
+| `src/lib/security.ts` | `containsSqlInjection()` function exists but is never called in any API route — dead code. Remove or wire up. | Low |
+| `src/proxy.ts:27` | CORS allows wildcard in dev — should specify explicit domain for production. | Medium |
+| All GET supply/asset routes | No `isManagerOrAbove` check — EMPLOYEE role can enumerate all supplies, transactions, and asset checkouts. | Medium |
 | No test files | Zero unit/integration tests across the entire codebase. | High |
-| `src/lib/logger.ts` | Logger has a `production` branch that outputs JSON but no log rotation/shipping configured. | Low |
-| `prisma/seed.ts` | Compiled to `dist-seed/` before use — adding a `prebuild` or `predev` script to auto-compile would reduce manual steps. | Low |
-| Session cleanup | Expired sessions accumulate in DB — no cron job or cleanup route to prune them. | Medium |
-| `LeaveForm.tsx` | Hard-codes fiscal year calc (Oct 1 – Sep 30) — same logic also in `leave-stats` API. Should be a shared utility. | Low |
+| Session cleanup | Expired sessions accumulate in DB — no cron job to prune `sessions` table. | Medium |
+| `LeaveForm.tsx` | Fiscal year calc (Oct 1–Sep 30) duplicated in `leave-stats` API. Should be a shared utility. | Low |
+| `src/lib/logger.ts` | Production JSON logs have no rotation/shipping configured. | Low |
 
 ---
 
-## 11. Suggested Feature Placement
-
-### Notifications / Reminders
-- Add `Notification` model to Prisma (userId, message, isRead, createdAt)
-- New API: `GET/POST /api/notifications`
-- Hook into `/api/leaves/[id]` (on approve/reject) and `/api/tasks/[id]` (on reminderAt match)
-- Client: polling or Server-Sent Events endpoint
-
-### Leave Balance Tracking
-- Extend `User` model with `leaveBalances` or a separate `LeaveBalance` model
-- New API: `GET /api/leaves/balance?userId=`
-- Display in `leaves/page.tsx` header and `LeaveForm.tsx`
-
-### Reporting / Analytics Export
-- Extend `GET /api/leaves/export` to support XLSX (add `xlsx` package)
-- New: `GET /api/dashboard/report` that aggregates monthly trends
-- New dashboard tab in `dashboard/layout.tsx` menuItems
-
-### Employee Self-Service
-- New page: `/dashboard/my-leaves` — employees see only their own leaves, request new ones
-- Reuse `/api/leaves` (already role-scoped for EMPLOYEE role)
-
-### Audit Log
-- Add `AuditLog` model (entity, action, userId, changes JSON, createdAt)
-- Wire into user/leave/task mutations in API routes
-- New admin page: `/dashboard/audit`
-
-### Password Reset
-- Add `PasswordResetToken` model
-- New API: `POST /api/auth/reset-request`, `POST /api/auth/reset-confirm`
-- Email integration (nodemailer or Resend)
-
-### Kanban Enhancements
-- `Task` already has `reminderAt` and `archivedAt` — build an Archive view tab in `tasks/page.tsx`
-- Add due dates and labels (extend Task model with `dueDate`, `labels String[]`)
-
----
-
-## 12. Build & Development Commands
+## 14. Build & Development Commands
 
 ```bash
 pnpm dev          # Start dev server (Turbopack)
@@ -427,8 +485,42 @@ pnpm lint         # ESLint
 pnpm db:generate  # Regenerate Prisma client after schema changes
 pnpm db:migrate   # Run pending migrations (dev)
 pnpm db:studio    # Open Prisma Studio
-pnpm db:seed      # Run seed (uses dist-seed/prisma/seed.js)
+pnpm db:seed      # Run seed
+
+npx prisma db push  # Sync schema to DB without migration (used for new fields)
 
 docker-compose up -d              # Start MariaDB
 docker-compose --profile admin up # + phpMyAdmin on :8080
 ```
+
+---
+
+## 15. Suggested Next Features
+
+### Audit Log
+- Add `AuditLog` model (entity, action, userId, changes JSON, createdAt)
+- Wire into user/supply/asset mutations
+- New admin page: `/dashboard/audit`
+
+### Notifications / Reminders
+- `Notification` model (userId, message, isRead, createdAt)
+- Hook into leave approve/reject and asset overdue returns
+- Client: polling or Server-Sent Events
+
+### Leave Balance Tracking
+- Extend `User` or add `LeaveBalance` model
+- New API: `GET /api/leaves/balance?userId=`
+
+### Password Reset
+- `PasswordResetToken` model
+- APIs: `POST /api/auth/reset-request`, `POST /api/auth/reset-confirm`
+- Email via nodemailer or Resend
+
+### Kanban Enhancements
+- Archive view (Task already has `archivedAt`)
+- Due dates and labels (extend Task with `dueDate`, `labels`)
+
+### Supply/Asset Enhancements
+- QR code generation for asset tags
+- Scheduled inspection reminders
+- Low-stock email alerts for STOCK supplies

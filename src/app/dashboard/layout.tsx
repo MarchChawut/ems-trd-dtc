@@ -22,6 +22,7 @@ import {
   Loader2,
   Package,
   Monitor,
+  Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SessionUser } from '@/types';
@@ -65,6 +66,12 @@ const menuItems = [
     label: 'ครุภัณฑ์',
     icon: Monitor,
     href: '/dashboard/assets',
+  },
+  {
+    id: 'settings',
+    label: 'ตั้งค่า',
+    icon: Settings,
+    href: '/dashboard/settings',
   },
 ];
 

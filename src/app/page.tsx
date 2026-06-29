@@ -10,7 +10,8 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Briefcase, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Briefcase, Eye, EyeOff, Loader2, Fingerprint } from 'lucide-react';
+import { startAuthentication, WebAuthnError } from '@simplewebauthn/browser';
 import { cn } from '@/lib/utils';
 
 /**
@@ -31,7 +32,10 @@ export default function LoginPage() {
   
   // State สำหรับสถานะการส่งฟอร์ม
   const [isLoading, setIsLoading] = useState(false);
-  
+
+  // State สำหรับสถานะการเข้าสู่ระบบด้วย passkey
+  const [isPasskeyLoading, setIsPasskeyLoading] = useState(false);
+
   // State สำหรับข้อผิดพลาด
   const [error, setError] = useState<string | null>(null);
 
@@ -96,6 +100,59 @@ export default function LoginPage() {
       setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดที่ไม่คาดคิด');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /**
+   * ฟังก์ชันเข้าสู่ระบบด้วย passkey
+   * ต้องระบุ username ก่อน เพื่อให้ server หา passkey ที่ลงทะเบียนไว้
+   */
+  const handlePasskeyLogin = async () => {
+    if (!formData.username.trim()) {
+      setError('กรุณากรอกชื่อผู้ใช้ก่อนเข้าสู่ระบบด้วย passkey');
+      return;
+    }
+
+    setIsPasskeyLoading(true);
+    setError(null);
+
+    try {
+      // 1) ขอ options จาก server
+      const optRes = await fetch('/api/auth/passkey/login/options', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: formData.username }),
+      });
+      const optData = await optRes.json();
+      if (!optRes.ok || !optData.success) {
+        throw new Error(optData.message || 'ไม่พบ passkey สำหรับผู้ใช้นี้');
+      }
+
+      // 2) เรียก authenticator ของอุปกรณ์
+      const authResp = await startAuthentication({ optionsJSON: optData.data });
+
+      // 3) ส่งผลให้ server ตรวจสอบและสร้าง session
+      const verifyRes = await fetch('/api/auth/passkey/login/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response: authResp }),
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.success) {
+        throw new Error(verifyData.message || 'ไม่สามารถยืนยัน passkey ได้');
+      }
+
+      // เข้าสู่ระบบสำเร็จ
+      router.push('/dashboard');
+      router.refresh();
+    } catch (err) {
+      if (err instanceof WebAuthnError && err.code === 'ERROR_CEREMONY_ABORTED') {
+        setError('การเข้าสู่ระบบด้วย passkey ถูกยกเลิก');
+      } else {
+        setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเข้าสู่ระบบด้วย passkey');
+      }
+    } finally {
+      setIsPasskeyLoading(false);
     }
   };
 
@@ -213,6 +270,34 @@ export default function LoginPage() {
                 ) : (
                   <span>เข้าสู่ระบบ</span>
                 )}
+              </button>
+
+              {/* ตัวคั่น */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-slate-200" />
+                <span className="text-xs text-slate-400">หรือ</span>
+                <div className="flex-1 h-px bg-slate-200" />
+              </div>
+
+              {/* ปุ่มเข้าสู่ระบบด้วย passkey */}
+              <button
+                type="button"
+                onClick={handlePasskeyLogin}
+                disabled={isPasskeyLoading || isLoading}
+                className={cn(
+                  "w-full bg-white text-indigo-600 font-semibold py-3 rounded-lg border border-indigo-200",
+                  "hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2",
+                  "transition-all duration-200",
+                  "disabled:opacity-60 disabled:cursor-not-allowed",
+                  "flex items-center justify-center gap-2"
+                )}
+              >
+                {isPasskeyLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Fingerprint className="w-5 h-5" />
+                )}
+                <span>เข้าสู่ระบบด้วย passkey</span>
               </button>
             </form>
             
