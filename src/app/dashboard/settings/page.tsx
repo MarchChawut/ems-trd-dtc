@@ -12,7 +12,7 @@ import {
   startRegistration,
   WebAuthnError,
 } from '@simplewebauthn/browser';
-import { Fingerprint, Plus, Trash2, Loader2, ShieldCheck } from 'lucide-react';
+import { Fingerprint, Plus, Trash2, Loader2, ShieldCheck, KeyRound, Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /** ข้อมูล passkey ที่แสดงในรายการ */
@@ -32,6 +32,12 @@ export default function SettingsPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // สถานะ 2FA
+  const [twoFA, setTwoFA] = useState<{ enabled: boolean; backupCodesRemaining: number } | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [newBackupCodes, setNewBackupCodes] = useState<string[]>([]);
+  const [copied, setCopied] = useState(false);
+
   /** โหลดรายการ passkey */
   const loadPasskeys = async () => {
     try {
@@ -47,9 +53,52 @@ export default function SettingsPage() {
     }
   };
 
+  /** โหลดสถานะ 2FA */
+  const load2FA = async () => {
+    try {
+      const res = await fetch('/api/auth/2fa');
+      const data = await res.json();
+      if (res.ok && data.success) setTwoFA(data.data);
+    } catch {
+      /* เงียบไว้ ไม่บล็อกหน้า */
+    }
+  };
+
   useEffect(() => {
     loadPasskeys();
+    load2FA();
   }, []);
+
+  /** สร้างรหัสสำรองใหม่ (ต้องยืนยันด้วยรหัส TOTP ปัจจุบัน) */
+  const handleRegenerateBackupCodes = async () => {
+    const code = window.prompt('กรอกรหัส 6 หลักจากแอป authenticator เพื่อยืนยัน');
+    if (!code) return;
+    setMessage(null);
+    setNewBackupCodes([]);
+    setRegenerating(true);
+    try {
+      const res = await fetch('/api/auth/2fa/backup-codes/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'ไม่สำเร็จ');
+      setNewBackupCodes(data.data.backupCodes || []);
+      setMessage({ type: 'success', text: 'สร้างรหัสสำรองใหม่สำเร็จ (รหัสเดิมถูกยกเลิกแล้ว)' });
+      await load2FA();
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'เกิดข้อผิดพลาด' });
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const copyNewCodes = async () => {
+    await navigator.clipboard.writeText(newBackupCodes.join('\n'));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   /** ลงทะเบียน passkey ใหม่ */
   const handleAddPasskey = async () => {
@@ -130,6 +179,63 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
+      {/* ส่วน 2FA */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="p-6 border-b border-slate-100 flex items-start gap-4">
+          <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 shrink-0">
+            <ShieldCheck size={24} />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-slate-800">การยืนยันตัวตนสองชั้น (2FA)</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              ระบบบังคับใช้ 2FA กับการเข้าสู่ระบบด้วยรหัสผ่านทุกบัญชี
+              {twoFA && (
+                <>
+                  {' '}สถานะ:{' '}
+                  <span className={twoFA.enabled ? 'text-emerald-600 font-medium' : 'text-rose-600 font-medium'}>
+                    {twoFA.enabled ? 'เปิดใช้งานแล้ว' : 'ยังไม่ได้ตั้งค่า'}
+                  </span>
+                  {twoFA.enabled && ` · รหัสสำรองเหลือ ${twoFA.backupCodesRemaining} ชุด`}
+                </>
+              )}
+            </p>
+          </div>
+          {twoFA?.enabled && (
+            <button
+              onClick={handleRegenerateBackupCodes}
+              disabled={regenerating}
+              className={cn(
+                'flex items-center gap-2 bg-white text-emerald-700 text-sm font-medium px-4 py-2.5 rounded-lg border border-emerald-200 shrink-0',
+                'hover:bg-emerald-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
+              )}
+            >
+              {regenerating ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={18} />}
+              <span>สร้างรหัสสำรองใหม่</span>
+            </button>
+          )}
+        </div>
+
+        {newBackupCodes.length > 0 && (
+          <div className="p-6 border-b border-slate-100">
+            <p className="text-sm text-slate-500 mb-3">
+              รหัสสำรองชุดใหม่ (แสดงครั้งเดียว เก็บไว้ในที่ปลอดภัย):
+            </p>
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 border border-slate-200 rounded-lg p-4 font-mono text-sm text-slate-700">
+              {newBackupCodes.map((c) => (
+                <span key={c} className="text-center">{c}</span>
+              ))}
+            </div>
+            <button
+              onClick={copyNewCodes}
+              className="mt-3 flex items-center justify-center gap-2 text-sm text-indigo-600 border border-indigo-200 rounded-lg py-2 px-4 hover:bg-indigo-50 transition-colors"
+            >
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+              <span>{copied ? 'คัดลอกแล้ว' : 'คัดลอกรหัสทั้งหมด'}</span>
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* หัวข้อส่วน passkey */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex items-start gap-4">

@@ -8,7 +8,57 @@
 import { NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
 import { prisma } from './prisma';
+import { generateSecureToken } from './security';
 import { SessionUser, UserRole } from '@/types';
+
+/** ระยะเวลาหมดอายุของ session (ชั่วโมง) */
+const SESSION_EXPIRY_HOURS = 24;
+
+/**
+ * ดึง IP address ของ client จาก request (ใช้ร่วมกันในทุก route ที่ออก session)
+ */
+export function getClientIp(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  const realIp = request.headers.get('x-real-ip');
+  if (forwarded) return forwarded.split(',')[0].trim();
+  if (realIp) return realIp;
+  return 'unknown';
+}
+
+/**
+ * สร้าง session ใหม่และตั้ง cookie `session_token`
+ * ใช้ร่วมกันโดย login (password), 2FA verify/enable และ passkey login
+ * เพื่อให้พฤติกรรมการออก session เหมือนกันทุกทาง
+ * @returns {token, expiresAt}
+ */
+export async function createSession(
+  userId: number,
+  request: NextRequest
+): Promise<{ token: string; expiresAt: Date }> {
+  const token = generateSecureToken(64);
+  const expiresAt = new Date();
+  expiresAt.setHours(expiresAt.getHours() + SESSION_EXPIRY_HOURS);
+
+  await prisma.session.create({
+    data: {
+      userId,
+      token,
+      expiresAt,
+      ipAddress: getClientIp(request),
+      userAgent: request.headers.get('user-agent') || undefined,
+    },
+  });
+
+  (await cookies()).set('session_token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    expires: expiresAt,
+    path: '/',
+  });
+
+  return { token, expiresAt };
+}
 
 /**
  * ผลลัพธ์การตรวจสอบการเข้าสู่ระบบ

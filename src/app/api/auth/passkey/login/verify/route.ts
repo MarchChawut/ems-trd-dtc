@@ -6,14 +6,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
 } from '@simplewebauthn/server';
 import { prisma } from '@/lib/prisma';
-import { generateSecureToken, generateAvatarInitials } from '@/lib/security';
+import { generateAvatarInitials } from '@/lib/security';
+import { createSession, getClientIp } from '@/lib/auth';
 import {
   getRpConfig,
   consumeChallenge,
@@ -21,15 +21,6 @@ import {
   parseTransports,
 } from '@/lib/webauthn';
 import { logger } from '@/lib/logger';
-
-/** ดึง IP address ของ client จาก request */
-function getClientIp(request: NextRequest): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  const realIp = request.headers.get('x-real-ip');
-  if (forwarded) return forwarded.split(',')[0].trim();
-  if (realIp) return realIp;
-  return 'unknown';
-}
 
 export async function POST(request: NextRequest) {
   const clientIp = getClientIp(request);
@@ -121,20 +112,8 @@ export async function POST(request: NextRequest) {
     const user = authenticator.user;
     logger.info('User logged in with passkey', { userId: user.id, ip: clientIp });
 
-    // --- สร้าง session เหมือนการ login ด้วยรหัสผ่าน เพื่อให้ requireAuth/getCurrentUser ทำงานต่อได้ ---
-    const token = generateSecureToken(64);
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
-
-    await prisma.session.create({
-      data: {
-        userId: user.id,
-        token,
-        expiresAt,
-        ipAddress: clientIp,
-        userAgent: request.headers.get('user-agent') || undefined,
-      },
-    });
+    // --- สร้าง session ผ่าน helper กลาง (ใช้ร่วมกับ password/2FA login) ---
+    const { token, expiresAt } = await createSession(user.id, request);
 
     await prisma.loginAttempt.create({
       data: {
@@ -146,14 +125,6 @@ export async function POST(request: NextRequest) {
     });
 
     const avatar = user.avatar || generateAvatarInitials(user.name);
-
-    (await cookies()).set('session_token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      expires: expiresAt,
-      path: '/',
-    });
 
     const { password: _, ...userWithoutPassword } = user;
 

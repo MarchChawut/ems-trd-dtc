@@ -34,13 +34,18 @@ model User {
   avatar    String?  @db.VarChar(10) // ตัวย่อชื่อสำหรับแสดง avatar
   profileImage String? @db.VarChar(500) // URL รูปโปรไฟล์
   isActive  Boolean  @default(true)
-  
+
+  // การยืนยันตัวตนสองชั้น (2FA / TOTP)
+  twoFactorEnabled Boolean @default(false) // เปิดใช้งาน 2FA แล้วหรือยัง
+  twoFactorSecret  String? @db.VarChar(255) // TOTP secret (เข้ารหัส AES-GCM แล้ว)
+
   // ความสัมพันธ์กับตารางอื่น
   tasks     Task[]   // งานที่มอบหมายให้ผู้ใช้
   leaves    Leave[]  // รายการลาของผู้ใช้
   sessions  Session[] // Session สำหรับการเข้าสู่ระบบ
   loginAttempts LoginAttempt[] // ประวัติการพยายามเข้าสู่ระบบ
   authenticators Authenticator[] // Passkey (WebAuthn) ที่ลงทะเบียนไว้
+  backupCodes TwoFactorBackupCode[] // รหัสสำรองสำหรับ 2FA
   supplyTransactions SupplyTransaction[] @relation("TxPerformer")
   checkoutsHeld      AssetCheckout[]     @relation("CheckoutHolder")
   checkoutsIssued    AssetCheckout[]     @relation("CheckoutIssuer")
@@ -131,6 +136,39 @@ model WebAuthnChallenge {
 
   @@index([expiresAt])
   @@map("webauthn_challenges")
+}
+
+// ============================================
+// Model: TwoFactorBackupCode - รหัสสำรองสำหรับ 2FA (ใช้ครั้งเดียว, เก็บแบบ hash)
+// ============================================
+model TwoFactorBackupCode {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  codeHash  String    @db.VarChar(255) // bcrypt hash ของรหัสสำรอง
+  usedAt    DateTime? // เวลาที่ถูกใช้ (null = ยังไม่ถูกใช้)
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("two_factor_backup_codes")
+}
+
+// ============================================
+// Model: TwoFactorChallenge - สถานะ "รอยืนยัน 2FA" ชั่วคราวระหว่าง login
+// อ้างอิงด้วย id ที่เก็บใน cookie ชั่วคราว (2fa_pending)
+// ============================================
+model TwoFactorChallenge {
+  id            String   @id @default(cuid())
+  userId        Int // ผู้ใช้ที่ผ่านการตรวจรหัสผ่านแล้ว รอยืนยันปัจจัยที่สอง
+  pendingSecret String?  @db.VarChar(255) // TOTP secret ที่กำลังลงทะเบียน (เข้ารหัส) เฉพาะตอน enroll
+  attempts      Int      @default(0) // จำนวนครั้งที่กรอกรหัสผิด (กัน brute force)
+  expiresAt     DateTime
+
+  createdAt     DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("two_factor_challenges")
 }
 
 // ============================================

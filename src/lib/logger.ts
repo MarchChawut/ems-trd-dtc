@@ -61,6 +61,16 @@ function sanitizeData(data: Record<string, unknown> | undefined): Record<string,
     const lowerKey = key.toLowerCase();
     if (sensitiveFields.some(field => lowerKey.includes(field))) {
       sanitized[key] = '[REDACTED]';
+    } else if (value instanceof Error) {
+      // Error message/stack เป็น non-enumerable -> Object.entries จะได้ {} ต้องดึงออกมาเอง
+      sanitized[key] = {
+        name: value.name,
+        message: value.message,
+        ...(typeof (value as { code?: unknown }).code !== 'undefined'
+          ? { code: (value as { code?: unknown }).code }
+          : {}),
+        stack: value.stack,
+      };
     } else if (typeof value === 'object' && value !== null) {
       sanitized[key] = sanitizeData(value as Record<string, unknown>);
     } else {

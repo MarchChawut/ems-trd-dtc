@@ -8,15 +8,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { 
-  verifyPassword, 
-  loginSchema, 
-  generateSecureToken,
-  generateAvatarInitials 
-} from '@/lib/security';
+import { verifyPassword, loginSchema } from '@/lib/security';
 import { dbRateLimit } from '@/lib/rate-limit-db';
+import { createPendingChallenge } from '@/lib/twofactor';
 import { logger } from '@/lib/logger';
-import { cookies } from 'next/headers';
 
 /**
  * ฟังก์ชันสำหรับดึง IP address จาก request
@@ -182,68 +177,27 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // เข้าสู่ระบบสำเร็จ - ล้างข้อมูลการพยายามที่ล้มเหลว
+    // รหัสผ่านถูกต้อง - ล้างข้อมูลการพยายามที่ล้มเหลว
     await dbRateLimit.clearAttempts(clientIp);
     await dbRateLimit.clearAttempts(username);
-    
-    logger.info('User logged in successfully', { userId: user.id, username, ip: clientIp });
-    
-    // สร้าง session token
-    const token = generateSecureToken(64);
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24); // หมดอายุใน 24 ชั่วโมง
-    
-    // บันทึก session ลงฐานข้อมูล
-    await prisma.session.create({
-      data: {
-        userId: user.id,
-        token,
-        expiresAt,
-        ipAddress: clientIp,
-        userAgent: request.headers.get('user-agent') || undefined,
-      },
-    });
-    
-    // บันทึกการเข้าสู่ระบบที่สำเร็จ
-    await prisma.loginAttempt.create({
-      data: {
-        userId: user.id,
-        username,
-        ipAddress: clientIp,
-        success: true,
-      },
-    });
-    
-    // สร้าง avatar หากยังไม่มี
-    const avatar = user.avatar || generateAvatarInitials(user.name);
-    
-    // สร้าง cookie สำหรับ session
-    const sameSiteEnv = process.env.COOKIE_SAMESITE as "lax" | "strict" | "none" | undefined;
-    
-    (await cookies()).set('session_token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      expires: expiresAt,
-      path: '/',
-    });
-    
-    // ส่งข้อมูลผู้ใช้กลับไป (ไม่รวมรหัสผ่าน)
-    const { password: _, ...userWithoutPassword } = user;
-    
+
+    logger.info('Password verified, 2FA required', { userId: user.id, username, ip: clientIp });
+
+    // ยังไม่ออก session ทันที - บังคับยืนยันปัจจัยที่สอง (2FA) ก่อนเสมอ
+    // สร้าง challenge ชั่วคราว + ตั้ง cookie 2fa_pending
+    await createPendingChallenge(user.id);
+
+    // ผู้ใช้ที่ยังไม่ได้ตั้ง 2FA ต้องลงทะเบียนก่อน (ENROLL) ที่เหลือเข้าสู่ขั้นยืนยัน (VERIFY)
     return NextResponse.json({
       success: true,
       data: {
-        user: {
-          ...userWithoutPassword,
-          avatar,
-        },
-        token,
-        expiresAt,
+        requires2FA: true,
+        mode: user.twoFactorEnabled ? 'VERIFY' : 'ENROLL',
+        username: user.username,
       },
-      message: 'เข้าสู่ระบบสำเร็จ',
+      message: 'กรุณายืนยันตัวตนด้วยรหัส 2FA',
     });
-    
+
   } catch (error) {
     logger.error('Login error', { error, ip: clientIp });
     
