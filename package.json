@@ -4,6 +4,7 @@
   "description": "Employee Management System - Next.js Fullstack with MariaDB",
   "private": true,
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "next dev",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0 --port 3000",
