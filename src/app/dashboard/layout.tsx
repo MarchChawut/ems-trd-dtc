@@ -23,6 +23,7 @@ import {
   Package,
   Monitor,
   Settings,
+  Inbox,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SessionUser } from '@/types';
@@ -66,6 +67,12 @@ const menuItems = [
     label: 'ครุภัณฑ์',
     icon: Monitor,
     href: '/dashboard/assets',
+  },
+  {
+    id: 'documents',
+    label: 'หนังสือเข้า-ออก',
+    icon: Inbox,
+    href: '/dashboard/documents',
   },
   {
     id: 'settings',

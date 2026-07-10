@@ -50,7 +50,8 @@ model User {
   checkoutsHeld      AssetCheckout[]     @relation("CheckoutHolder")
   checkoutsIssued    AssetCheckout[]     @relation("CheckoutIssuer")
   assetsHeld         Asset[]             @relation("AssetHolder")
-  
+  documentsRecorded  DocumentRegister[]  @relation("DocumentRecorder")
+
   // timestamps
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -202,6 +203,7 @@ model Task {
   priority    Priority   @default(MEDIUM)
   assigneeId  Int?
   reminderAt  DateTime?  // วัน/เวลาแจ้งเตือน
+  reminderSentAt DateTime? // วัน/เวลาที่ส่งแจ้งเตือนเข้ากลุ่ม LINE ไปแล้ว (กันส่งซ้ำ)
   archivedAt  DateTime?  // วัน/เวลาที่เก็บถาวร
   
   // ความสัมพันธ์
@@ -233,6 +235,9 @@ model Leave {
   // ข้อมูลเพิ่มเติมสำหรับฟอร์ม
   isHalfDay      Boolean     @default(false) // ลาครึ่งวันหรือไม่
   hours          Float?      // จำนวนชั่วโมงที่ลา (ถ้าลาเป็นชั่วโมง)
+  outTime        String?     @db.VarChar(5) // เวลาออก (HH:mm) - มาสาย/ออกก่อนเวลา/ออกนอกเขตฯ
+  backTime       String?     @db.VarChar(5) // เวลากลับ (HH:mm) - มาสาย/ออกก่อนเวลา/ออกนอกเขตฯ
+  formCategory   LeaveFormCategory? // แบบส่ง กบก. / แบบเก็บสถิติ (เลือกได้อย่างเดียว)
   totalDays      Float       @default(0) // จำนวนวันลารวม (คำนวณจากกฎ)
   contactAddress String?     @db.Text // สถานที่พักขณะลา (ในระหว่างลาจะติดต่อข้าพเจ้าได้ที่)
   
@@ -369,13 +374,14 @@ enum Priority {
 
 // ประเภทการลา
 enum LeaveType {
-  SICK        // ลาป่วย
-  PERSONAL    // ลากิจ
-  VACATION    // ลาพักร้อน
-  MATERNITY   // ลาคลอดบุตร
-  ORDINATION  // ลาบวช
-  EARLY_LEAVE // ออกก่อนเวลา
-  OTHER       // อื่นๆ
+  SICK          // ลาป่วย
+  PERSONAL      // ลากิจ
+  MATERNITY     // ลาคลอดบุตร
+  ORDINATION    // ลาบวช
+  EARLY_LEAVE   // ออกก่อนเวลา
+  LATE_ARRIVAL  // มาสาย
+  RUN_AN_ERRAND // ออกนอกเขตพระราชฐาน
+  OTHER         // อื่นๆ
 }
 
 // สถานะการลา
@@ -383,6 +389,12 @@ enum LeaveStatus {
   PENDING   // รอพิจารณา
   APPROVED  // อนุมัติแล้ว
   REJECTED  // ไม่อนุมัติ
+}
+
+// ประเภทแบบฟอร์ม (เลือกได้อย่างเดียว)
+enum LeaveFormCategory {
+  KBK   // แบบส่ง กบก.
+  STATS // แบบเก็บสถิติ
 }
 
 // ============================================
@@ -622,4 +634,48 @@ model UploadedFile {
   createdAt    DateTime @default(now())
 
   @@map("uploaded_files")
+}
+
+// ============================================
+// Enum: DocumentDirection - ทิศทางเอกสาร (หนังสือเข้า/หนังสือออก)
+// ============================================
+enum DocumentDirection {
+  RECEIVE // หนังสือเข้า
+  SEND    // หนังสือออก
+}
+
+// ============================================
+// Enum: DocumentCategory - ประเภทของหนังสือ
+// ============================================
+enum DocumentCategory {
+  MEMO            // บันทึกข้อความ
+  EXTERNAL_LETTER // หนังสือภายนอก
+  PW_NEWS         // พว.แจ้งข่าว
+}
+
+// ============================================
+// Model: DocumentRegister - ทะเบียนรับ-ส่งเอกสาร
+// ============================================
+model DocumentRegister {
+  id             Int               @id @default(autoincrement())
+  date           DateTime          @db.Date // วันที่ของเอกสาร
+  subject        String            @db.VarChar(500) // เรื่อง
+  direction      DocumentDirection // ทิศทาง: หนังสือเข้า/หนังสือออก
+  category       DocumentCategory? // ประเภทของหนังสือ
+  documentNumber String?           @db.VarChar(100) // เลขที่เอกสาร
+  recipientName  String?           @db.VarChar(200) // ชื่อผู้รับ
+  senderName     String?           @db.VarChar(200) // ชื่อผู้ส่ง
+  remarks        String?           @db.Text // หมายเหตุ
+  isActive       Boolean           @default(true)
+
+  recordedById   Int
+  recordedBy     User              @relation("DocumentRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([direction, date])
+  @@index([isActive, date])
+  @@index([recordedById])
+  @@map("document_registers")
 }

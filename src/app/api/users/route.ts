@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createUserSchema, hashPassword, generateAvatarInitials, sanitizeInput } from '@/lib/security';
+import { createUserSchema, hashPassword, generateAvatarInitials } from '@/lib/security';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
@@ -69,35 +69,35 @@ export async function GET(request: NextRequest) {
       where.isActive = isActive === 'true';
     }
 
-    // ดึงข้อมูลผู้ใช้
-    const users = await prisma.user.findMany({
-      where,
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        prefix: true,
-        name: true,
-        role: true,
-        department: true,
-        division: true,
-        position: true,
-        positionSecond: true,
-        positionLevel: true,
-        phone: true,
-        birthday: true,
-        address: true,
-        avatar: true,
-        profileImage: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // นับจำนวนผู้ใช้ทั้งหมด
-    const total = await prisma.user.count({ where });
+    // ดึงข้อมูลผู้ใช้ + นับจำนวนผู้ใช้ทั้งหมด (query อิสระต่อกัน รันพร้อมกันได้)
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          prefix: true,
+          name: true,
+          role: true,
+          department: true,
+          division: true,
+          position: true,
+          positionSecond: true,
+          positionLevel: true,
+          phone: true,
+          birthday: true,
+          address: true,
+          avatar: true,
+          profileImage: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.user.count({ where }),
+    ]);
 
     return NextResponse.json({
       success: true,
@@ -224,13 +224,13 @@ export async function POST(request: NextRequest) {
     // สร้างผู้ใช้ใหม่
     const user = await prisma.user.create({
       data: {
-        email: sanitizeInput(email),
-        username: sanitizeInput(username),
+        email,
+        username,
         password: hashedPassword,
-        prefix: prefix ? sanitizeInput(prefix) : null,
-        name: sanitizeInput(name),
+        prefix: prefix || null,
+        name,
         role,
-        department: department ? sanitizeInput(department) : null,
+        department: department || null,
         avatar,
       },
       select: {

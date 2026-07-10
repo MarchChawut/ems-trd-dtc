@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createTaskSchema, sanitizeInput } from '@/lib/security';
+import { createTaskSchema } from '@/lib/security';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { title, description, priority, columnId, assigneeId } = validationResult.data;
+    const { title, description, priority, columnId, assigneeId, reminderAt } = validationResult.data;
 
     // ตรวจสอบว่าคอลัมน์มีอยู่หรือไม่ (ถ้าระบุ)
     if (columnId) {
@@ -192,11 +192,12 @@ export async function POST(request: NextRequest) {
     // สร้างงานใหม่
     const task = await prisma.task.create({
       data: {
-        title: sanitizeInput(title),
-        description: description ? sanitizeInput(description) : null,
+        title,
+        description: description || null,
         priority,
         columnId: columnId || 1, // คอลัมน์แรกเป็นค่าเริ่มต้น
         assigneeId: assigneeId || null,
+        reminderAt: reminderAt ? new Date(reminderAt) : null,
       },
       include: {
         column: true,

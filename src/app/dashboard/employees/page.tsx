@@ -8,7 +8,7 @@
 
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Plus, 
@@ -549,11 +549,11 @@ export default function EmployeesPage() {
   /**
    * ฟังก์ชันกรองผู้ใช้ตามคำค้นหา
    */
-  const filteredUsers = users.filter(user =>
+  const filteredUsers = useMemo(() => users.filter(user =>
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.department?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ), [users, searchQuery]);
 
   // ตรวจสอบสิทธิ์
   const canManageUsers = ['ADMIN', 'SUPER_ADMIN'].includes(userRole);

@@ -7,7 +7,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { sanitizeInput } from '@/lib/security';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
@@ -82,11 +81,11 @@ export async function PATCH(
     const updateData: any = {};
 
     if (body.title !== undefined) {
-      updateData.title = sanitizeInput(body.title);
+      updateData.title = body.title;
     }
 
     if (body.description !== undefined) {
-      updateData.description = body.description ? sanitizeInput(body.description) : null;
+      updateData.description = body.description || null;
     }
 
     if (body.columnId !== undefined) {
@@ -146,6 +145,8 @@ export async function PATCH(
 
     if (body.reminderAt !== undefined) {
       updateData.reminderAt = body.reminderAt ? new Date(body.reminderAt) : null;
+      // ตั้งเวลาแจ้งเตือนใหม่ (หรือลบ) ทุกครั้ง ให้รีเซ็ตสถานะ "ส่งแล้ว" เพื่อให้เวลาที่ตั้งใหม่ยังส่งแจ้งเตือนได้
+      updateData.reminderSentAt = null;
     }
 
     if (body.archivedAt !== undefined) {

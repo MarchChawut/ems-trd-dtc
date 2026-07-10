@@ -19,11 +19,12 @@ import { logger } from '@/lib/logger';
  * - date: ค้นหาว่าวันนี้มีใครลาบ้าง (YYYY-MM-DD)
  * - startDate: วันเริ่มต้นช่วงค้นหา
  * - endDate: วันสิ้นสุดช่วงค้นหา
- * 
+ * - formCategory: กรองตามประเภทแบบฟอร์ม (KBK = แบบส่ง กบก., STATS = แบบเก็บสถิติ)
+ *
  * Response:
  * {
  *   success: true,
- *   data: Leave[]
+ *   data: Leave[] // สูงสุด 200 รายการ เรียงตามวันที่เริ่มล่าสุด
  * }
  */
 export async function GET(request: NextRequest) {
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
     const date = searchParams.get('date');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const formCategory = searchParams.get('formCategory');
 
     // สร้าง where clause
     const where: any = {};
@@ -54,6 +56,11 @@ export async function GET(request: NextRequest) {
           contains: name,
         },
       };
+    }
+
+    // กรองด้วยประเภทแบบฟอร์ม (แบบส่ง กบก. / แบบเก็บสถิติ)
+    if (formCategory === 'KBK' || formCategory === 'STATS') {
+      where.formCategory = formCategory;
     }
 
     // ค้นหาด้วยวันที่เฉพาะวัน
@@ -91,6 +98,7 @@ export async function GET(request: NextRequest) {
         },
       },
       orderBy: { startDate: 'desc' },
+      take: 200, // จำกัดผลลัพธ์ค้นหาสูงสุด ป้องกันการดึงข้อมูลทั้งตารางโดยไม่ตั้งใจ
     });
 
     return NextResponse.json({

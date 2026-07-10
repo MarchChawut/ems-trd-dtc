@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus, Search, Download, Loader2, X, Monitor,
   FileText, History, Settings, Image as ImageIcon
@@ -205,7 +205,7 @@ export default function AssetsPage() {
   // Filtered
   // ----------------------------------------
 
-  const filteredAssets = assets.filter(a => {
+  const filteredAssets = useMemo(() => assets.filter(a => {
     if (statusFilter && a.status !== statusFilter) return false;
     if (categoryFilter && a.categoryId !== Number(categoryFilter)) return false;
     if (searchQuery) {
@@ -217,7 +217,7 @@ export default function AssetsPage() {
         (a.brand || '').toLowerCase().includes(q);
     }
     return true;
-  });
+  }), [assets, statusFilter, categoryFilter, searchQuery]);
 
   // ----------------------------------------
   // Asset CRUD

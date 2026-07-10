@@ -10,11 +10,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { safeGetGregorianYear } from '@/lib/utils';
 
 /**
  * คอลัมน์ทั้งหมดที่รองรับ
  */
-const ALL_COLUMNS = ['id', 'name', 'department', 'type', 'startDate', 'endDate', 'days', 'reason', 'status', 'approvedBy', 'createdAt'] as const;
+const ALL_COLUMNS = ['id', 'name', 'department', 'type', 'startDate', 'endDate', 'days', 'reason', 'status', 'approvedBy', 'createdAt', 'formCategory'] as const;
 type ColumnKey = typeof ALL_COLUMNS[number];
 
 const COLUMN_HEADERS: Record<ColumnKey, string> = {
@@ -29,6 +30,7 @@ const COLUMN_HEADERS: Record<ColumnKey, string> = {
   status: 'สถานะ',
   approvedBy: 'ผู้อนุมัติ',
   createdAt: 'วันที่บันทึก',
+  formCategory: 'ประเภทแบบฟอร์ม',
 };
 
 /**
@@ -53,6 +55,7 @@ function convertToCSV(data: any[], columns: ColumnKey[]): string {
         case 'status': return translateStatus(item.status);
         case 'approvedBy': return item.approvedBy || '-';
         case 'createdAt': return formatDate(item.createdAt);
+        case 'formCategory': return translateFormCategory(item.formCategory);
         default: return '';
       }
     });
@@ -69,13 +72,23 @@ function translateLeaveType(type: string): string {
   const types: Record<string, string> = {
     'SICK': 'ลาป่วย',
     'PERSONAL': 'ลากิจ',
-    'VACATION': 'ลาพักร้อน',
     'MATERNITY': 'ลาคลอดบุตร',
     'ORDINATION': 'ลาบวช',
     'EARLY_LEAVE': 'ออกก่อนเวลา',
+    'LATE_ARRIVAL': 'มาสาย',
+    'RUN_AN_ERRAND': 'ออกนอกเขตพระราชฐาน',
     'OTHER': 'อื่นๆ',
   };
   return types[type] || type;
+}
+
+/**
+ * แปลงประเภทแบบฟอร์มเป็นภาษาไทย
+ */
+function translateFormCategory(formCategory: string | null): string {
+  if (formCategory === 'KBK') return 'แบบส่ง กบก.';
+  if (formCategory === 'STATS') return 'แบบเก็บสถิติ';
+  return '-';
 }
 
 /**
@@ -95,6 +108,11 @@ function translateStatus(status: string): string {
  */
 function formatDate(date: Date | string): string {
   const d = new Date(date);
+  // ป้องกันบวก พ.ศ. ซ้ำ กรณีปีใน DB เป็น พ.ศ. อยู่แล้ว (legacy data)
+  const correctedYear = safeGetGregorianYear(d);
+  if (correctedYear !== d.getFullYear()) {
+    d.setFullYear(correctedYear);
+  }
   return d.toLocaleDateString('th-TH', {
     year: 'numeric',
     month: '2-digit',
@@ -126,6 +144,7 @@ function calculateDays(startDate: Date | string, endDate: Date | string, isHalfD
  * - name: ค้นหาด้วยชื่อพนักงาน
  * - startDate: วันเริ่มต้น (YYYY-MM-DD)
  * - endDate: วันสิ้นสุด (YYYY-MM-DD)
+ * - formCategory: กรองตามประเภทแบบฟอร์ม (KBK = แบบส่ง กบก., STATS = แบบเก็บสถิติ)
  * - columns: คอลัมน์ที่ต้องการ (comma-separated)
  *
  * Response: CSV file download
@@ -146,6 +165,7 @@ export async function GET(request: NextRequest) {
     const name = searchParams.get('name');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const formCategory = searchParams.get('formCategory');
     const columnsParam = searchParams.get('columns');
 
     // กำหนดคอลัมน์ที่จะ export
@@ -171,6 +191,11 @@ export async function GET(request: NextRequest) {
           contains: name,
         },
       };
+    }
+
+    // กรองด้วยประเภทแบบฟอร์ม (แบบส่ง กบก. / แบบเก็บสถิติ)
+    if (formCategory === 'KBK' || formCategory === 'STATS') {
+      where.formCategory = formCategory;
     }
 
     // กรองด้วยระยะเวลา

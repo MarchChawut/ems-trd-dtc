@@ -156,6 +156,7 @@ export interface Task {
   assigneeId: number | null;
   assignee: User | null;
   reminderAt: Date | null;
+  reminderSentAt: Date | null;
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -192,12 +193,17 @@ export interface UpdateTaskInput {
 /**
  * ประเภทการลา
  */
-export type LeaveType = 'SICK' | 'PERSONAL' | 'VACATION' | 'MATERNITY' | 'ORDINATION' | 'EARLY_LEAVE' | 'OTHER';
+export type LeaveType = 'SICK' | 'PERSONAL' | 'MATERNITY' | 'ORDINATION' | 'EARLY_LEAVE' | 'LATE_ARRIVAL' | 'RUN_AN_ERRAND' | 'OTHER';
 
 /**
  * สถานะการลา
  */
 export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+/**
+ * ประเภทแบบฟอร์ม (เลือกได้อย่างเดียว)
+ */
+export type LeaveFormCategory = 'KBK' | 'STATS';
 
 /**
  * ข้อมูลการลา
@@ -215,6 +221,9 @@ export interface Leave {
   approvedAt: Date | null;
   isHalfDay: boolean;
   hours: number | null;
+  outTime: string | null;
+  backTime: string | null;
+  formCategory: LeaveFormCategory | null;
   totalDays: number;
   contactAddress: string | null;
   createdAt: Date;
@@ -231,6 +240,9 @@ export interface CreateLeaveInput {
   reason: string;
   isHalfDay?: boolean;
   hours?: number;
+  outTime?: string; // เวลาออก (HH:mm)
+  backTime?: string; // เวลากลับ (HH:mm)
+  formCategory?: LeaveFormCategory | null;
   contactAddress?: string; // สถานที่พักขณะลา
 }
 
@@ -616,4 +628,39 @@ export interface CreateCheckoutInput {
   holderId: number;
   expectedReturnAt?: string | null;
   notes?: string | null;
+}
+
+// ============================================
+// Document Register Types - ประเภทข้อมูลทะเบียนรับ-ส่งเอกสาร
+// ============================================
+
+export type DocumentDirection = 'RECEIVE' | 'SEND';
+export type DocumentCategory = 'MEMO' | 'EXTERNAL_LETTER' | 'PW_NEWS';
+
+export interface DocumentRegister {
+  id: number;
+  date: Date | string;
+  subject: string;
+  direction: DocumentDirection;
+  category: DocumentCategory | null;
+  documentNumber: string | null;
+  recipientName: string | null;
+  senderName: string | null;
+  remarks: string | null;
+  recordedById: number;
+  recordedBy?: Pick<User, 'id' | 'prefix' | 'name' | 'avatar'>;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateDocumentRegisterInput {
+  date: string;
+  subject: string;
+  direction: DocumentDirection;
+  category: DocumentCategory;
+  documentNumber?: string | null;
+  recipientName?: string | null;
+  senderName?: string | null;
+  remarks?: string | null;
 }

@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { sanitizeInput, hashPassword } from '@/lib/security';
+import { hashPassword } from '@/lib/security';
 import { requireAuth, isAdmin } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
@@ -245,11 +245,11 @@ export async function PATCH(
     const updateData: any = {};
 
     if (email !== undefined) {
-      updateData.email = sanitizeInput(email);
+      updateData.email = email;
     }
 
     if (name !== undefined) {
-      updateData.name = sanitizeInput(name);
+      updateData.name = name;
     }
 
     // เฉพาะ ADMIN เท่านั้นที่สามารถเปลี่ยน role และ isActive
@@ -264,22 +264,22 @@ export async function PATCH(
     }
 
     if (validationResult.data.prefix !== undefined) {
-      updateData.prefix = validationResult.data.prefix ? sanitizeInput(validationResult.data.prefix) : null;
+      updateData.prefix = validationResult.data.prefix || null;
     }
 
     // เฉพาะ ADMIN เท่านั้นที่สามารถเปลี่ยนข้อมูลองค์กร
     if (isAdmin(currentUser.role)) {
       if (department !== undefined) {
-        updateData.department = department ? sanitizeInput(department) : null;
+        updateData.department = department || null;
       }
       if (validationResult.data.division !== undefined) {
-        updateData.division = validationResult.data.division ? sanitizeInput(validationResult.data.division) : null;
+        updateData.division = validationResult.data.division || null;
       }
       if (validationResult.data.position !== undefined) {
-        updateData.position = validationResult.data.position ? sanitizeInput(validationResult.data.position) : null;
+        updateData.position = validationResult.data.position || null;
       }
       if (validationResult.data.positionSecond !== undefined) {
-        updateData.positionSecond = validationResult.data.positionSecond ? sanitizeInput(validationResult.data.positionSecond) : null;
+        updateData.positionSecond = validationResult.data.positionSecond || null;
       }
       if (validationResult.data.positionLevel !== undefined) {
         updateData.positionLevel = validationResult.data.positionLevel;
@@ -287,7 +287,7 @@ export async function PATCH(
     }
 
     if (validationResult.data.phone !== undefined) {
-      updateData.phone = validationResult.data.phone ? sanitizeInput(validationResult.data.phone) : null;
+      updateData.phone = validationResult.data.phone || null;
     }
 
     if (validationResult.data.birthday !== undefined) {
@@ -295,7 +295,7 @@ export async function PATCH(
     }
 
     if (validationResult.data.address !== undefined) {
-      updateData.address = validationResult.data.address ? sanitizeInput(validationResult.data.address) : null;
+      updateData.address = validationResult.data.address || null;
     }
 
     if (validationResult.data.profileImage !== undefined) {

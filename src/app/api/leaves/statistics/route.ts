@@ -53,10 +53,11 @@ export async function GET(request: NextRequest) {
     const stats = {
       SICK: { count: 0, days: 0 },
       PERSONAL: { count: 0, days: 0 },
-      VACATION: { count: 0, days: 0 },
       MATERNITY: { count: 0, days: 0 },
       ORDINATION: { count: 0, days: 0 },
       EARLY_LEAVE: { count: 0, days: 0 },
+      LATE_ARRIVAL: { count: 0, days: 0 },
+      RUN_AN_ERRAND: { count: 0, days: 0 },
       OTHER: { count: 0, days: 0 },
     };
 

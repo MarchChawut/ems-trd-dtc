@@ -114,13 +114,14 @@ export const createTaskSchema = z.object({
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
   columnId: z.number().int().positive().optional(),
   assigneeId: z.number().int().positive().optional(),
+  reminderAt: z.string().optional().nullable(),
 });
 
 /**
  * Schema สำหรับตรวจสอบการสร้างรายการลา
  */
 export const createLeaveSchema = z.object({
-  type: z.enum(['SICK', 'PERSONAL', 'VACATION', 'MATERNITY', 'ORDINATION', 'EARLY_LEAVE', 'OTHER']),
+  type: z.enum(['SICK', 'PERSONAL', 'MATERNITY', 'ORDINATION', 'EARLY_LEAVE', 'LATE_ARRIVAL', 'RUN_AN_ERRAND', 'OTHER']),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'รูปแบบวันที่ต้องเป็น YYYY-MM-DD'),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'รูปแบบวันที่ต้องเป็น YYYY-MM-DD'),
   reason: z
@@ -129,6 +130,9 @@ export const createLeaveSchema = z.object({
     .max(500, 'เหตุผลต้องไม่เกิน 500 ตัวอักษร'),
   isHalfDay: z.boolean().optional(),
   hours: z.number().min(0).max(24).optional(),
+  outTime: z.string().regex(/^\d{2}:\d{2}$/, 'รูปแบบเวลาต้องเป็น HH:mm').optional(),
+  backTime: z.string().regex(/^\d{2}:\d{2}$/, 'รูปแบบเวลาต้องเป็น HH:mm').optional(),
+  formCategory: z.enum(['KBK', 'STATS']).nullable().optional(),
   contactAddress: z.string().max(500, 'สถานที่พักต้องไม่เกิน 500 ตัวอักษร').optional(),
 }).refine((data) => {
   const start = new Date(data.startDate);
@@ -234,66 +238,19 @@ export const createCheckoutSchema = z.object({
   notes: z.string().max(2000).optional().nullable(),
 });
 
-// ============================================
-// การป้องกัน XSS (Cross-Site Scripting)
-// ============================================
-
 /**
- * ฟังก์ชันสำหรับทำความสะอาดข้อความ (Sanitize)
- * ป้องกัน XSS โดยการแปลงอักขระพิเศษ
- * @param input - ข้อความที่ต้องการทำความสะอาด
- * @returns {string} ข้อความที่ปลอดภัย
- * 
- * ตัวอย่างการใช้งาน:
- * const safeText = sanitizeInput('<script>alert("xss")</script>');
- * // ผลลัพธ์: &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;
+ * Schema สำหรับตรวจสอบการสร้าง/อัปเดตทะเบียนรับ-ส่งเอกสาร
  */
-export function sanitizeInput(input: string): string {
-  if (!input) return '';
-  
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
-    .replace(/\//g, '&#x2F;');
-}
-
-/**
- * ฟังก์ชันสำหรับตรวจสอบว่าข้อความมี HTML tags หรือไม่
- * @param input - ข้อความที่ต้องการตรวจสอบ
- * @returns {boolean} true หากพบ HTML tags
- */
-export function containsHtml(input: string): boolean {
-  const htmlRegex = /<[^>]*>/;
-  return htmlRegex.test(input);
-}
-
-// ============================================
-// การป้องกัน SQL Injection
-// ============================================
-
-/**
- * ฟังก์ชันสำหรับตรวจสอบว่าข้อความมี SQL injection patterns หรือไม่
- * @param input - ข้อความที่ต้องการตรวจสอบ
- * @returns {boolean} true หากพบ patterns ที่น่าสงสัย
- */
-export function containsSqlInjection(input: string): boolean {
-  const sqlPatterns = [
-    /(\%27)|(\')|(\-\-)|(\%23)|(#)/i,
-    /((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))/i,
-    /\w*((\%27)|(\'))((\%6F)|o|(\%4F))((\%72)|r|(\%52))/i,
-    /((\%27)|(\'))union/i,
-    /exec(\s|\+)+(s|x)p\w+/i,
-    /UNION\s+SELECT/i,
-    /INSERT\s+INTO/i,
-    /DELETE\s+FROM/i,
-    /DROP\s+TABLE/i,
-  ];
-  
-  return sqlPatterns.some(pattern => pattern.test(input));
-}
+export const createDocumentRegisterSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'กรุณาระบุวันที่ให้ถูกต้อง'),
+  subject: z.string().min(1, 'กรุณาระบุเรื่อง').max(500, 'เรื่องต้องไม่เกิน 500 ตัวอักษร'),
+  direction: z.enum(['RECEIVE', 'SEND']),
+  category: z.enum(['MEMO', 'EXTERNAL_LETTER', 'PW_NEWS']),
+  documentNumber: z.string().max(100).optional().nullable(),
+  recipientName: z.string().max(200).optional().nullable(),
+  senderName: z.string().max(200).optional().nullable(),
+  remarks: z.string().max(2000).optional().nullable(),
+});
 
 // ============================================
 // การป้องกัน Brute Force

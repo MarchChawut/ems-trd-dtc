@@ -1,6 +1,6 @@
 # CODEBASE MAP — EMS Admin (ems-trd-dtc)
 
-> Generated: 2026-06-06  
+> Generated: 2026-06-06 · Last updated: 2026-06-30 (passkey + 2FA)  
 > Purpose: Context reference for feature development
 
 ---
@@ -10,7 +10,7 @@
 **Employee Management System (EMS)** — a Thai government-context internal HR tool built as a Next.js 16 fullstack application. Deployed on Synology NAS with MariaDB. All UI is in Thai.
 
 Core modules:
-- **Authentication** — custom session-based auth with DB-backed brute-force protection
+- **Authentication** — custom session-based auth with DB-backed brute-force protection, **mandatory 2FA (TOTP)** on password login, and **passkey (WebAuthn) login** as an alternative
 - **Employees** — CRUD, profile images, import from CSV
 - **Leaves** — Thai-gov–style leave requests, PDF generation, fiscal-year statistics
 - **Kanban Tasks** — draggable column board with assignees and reminders
@@ -35,6 +35,8 @@ Core modules:
 | Database | MariaDB 10.11 (Docker on Synology NAS) |
 | Validation | Zod 3 |
 | Auth | Custom session tokens (bcryptjs + HttpOnly cookie) |
+| 2FA | TOTP via `otplib` 13 + QR via `qrcode`; secret encrypted at rest (AES-256-GCM) |
+| Passkey | WebAuthn via `@simplewebauthn/server` + `@simplewebauthn/browser` 13 |
 | File Upload | Magic-byte MIME detection via `file-type` |
 | Build | pnpm, tsx (seed/scripts), Turbopack (dev) |
 
@@ -44,7 +46,7 @@ Core modules:
 
 ```
 ems-trd-dtc/
-├── .env                          # DATABASE_URL, NEXTAUTH_SECRET, NEXTAUTH_URL
+├── .env                          # DATABASE_URL, RP_ID/RP_NAME/WEBAUTHN_ORIGIN, TWO_FACTOR_ENC_KEY, etc.
 ├── .gitignore                    # Excludes .claude/, backups/, .env, node_modules, etc.
 ├── next.config.js                # Security headers (HSTS, CSP, etc.), canvas alias
 ├── tailwind.config.ts
@@ -73,10 +75,13 @@ ems-trd-dtc/
     │
     ├── lib/
     │   ├── prisma.ts             # Prisma client singleton
-    │   ├── auth.ts               # requireAuth, checkRole, isAdmin, isManagerOrAbove
+    │   ├── auth.ts               # requireAuth, checkRole, isAdmin, isManagerOrAbove, createSession, getClientIp
     │   ├── security.ts           # hashPassword, Zod schemas, sanitizeInput, generateSecureToken
+    │   ├── crypto.ts             # AES-256-GCM encrypt/decrypt (TOTP secret at rest) — needs TWO_FACTOR_ENC_KEY
+    │   ├── twofactor.ts          # TOTP (otplib), backup codes, 2fa_pending challenge helpers
+    │   ├── webauthn.ts           # Passkey RP config, base64url helpers, WebAuthn challenge store
     │   ├── rate-limit-db.ts      # DB-backed rate limiter (DatabaseRateLimiter)
-    │   ├── logger.ts             # Structured logger (dev: pretty, prod: JSON)
+    │   ├── logger.ts             # Structured logger (dev: pretty, prod: JSON; serializes Error message/stack)
     │   └── utils.ts              # cn(), formatDate, toBuddhistYear, etc.
     │
     ├── components/
@@ -91,19 +96,34 @@ ems-trd-dtc/
         ├── page.tsx              # Login page (/)
         │
         ├── dashboard/
-        │   ├── layout.tsx        # Sidebar + Header shell
+        │   ├── layout.tsx        # Sidebar + Header shell (nav includes ตั้งค่า)
         │   ├── page.tsx          # Dashboard — leave stats + summary
         │   ├── employees/page.tsx
         │   ├── leaves/page.tsx
         │   ├── tasks/page.tsx    # Kanban board
         │   ├── supplies/page.tsx # พัสดุ — inventory, transactions, export
-        │   └── assets/page.tsx   # ครุภัณฑ์ — registry, checkout, inspection, export
+        │   ├── assets/page.tsx   # ครุภัณฑ์ — registry, checkout, inspection, export
+        │   └── settings/page.tsx # ตั้งค่า — manage passkeys + 2FA status/backup codes
         │
         └── api/
             ├── auth/
-            │   ├── login/route.ts
+            │   ├── login/route.ts                # password verify → requires2FA (VERIFY|ENROLL)
             │   ├── logout/route.ts
-            │   └── session/route.ts
+            │   ├── session/route.ts
+            │   ├── 2fa/
+            │   │   ├── route.ts                  # GET status (enabled, backupCodesRemaining)
+            │   │   ├── setup/route.ts            # POST — generate secret + QR (enroll)
+            │   │   ├── enable/route.ts           # POST — confirm code, enable, issue backup codes + session
+            │   │   ├── verify/route.ts           # POST — TOTP or backup code → session
+            │   │   ├── backup-codes/regenerate/route.ts  # POST — regen (needs current code)
+            │   │   └── [userId]/route.ts         # DELETE — admin reset a user's 2FA
+            │   └── passkey/
+            │       ├── route.ts                  # GET list / (DELETE in [id])
+            │       ├── [id]/route.ts             # DELETE a passkey
+            │       ├── register/options/route.ts # POST (auth) — registration options
+            │       ├── register/verify/route.ts  # POST (auth) — store authenticator
+            │       ├── login/options/route.ts    # POST — auth options by username
+            │       └── login/verify/route.ts     # POST — verify assertion → session
             ├── users/
             │   ├── route.ts
             │   ├── [id]/route.ts
@@ -183,7 +203,7 @@ ems-trd-dtc/
 │  All routes use:                                         │
 │    lib/auth.ts ───────────────────────────────────┐      │
 │    lib/security.ts (Zod schemas, sanitize) ───────┤      │
-│    lib/rate-limit-db.ts (login route only) ───────┤      │
+│    lib/rate-limit-db.ts (login + 2fa verify) ─────┤      │
 │    lib/logger.ts ─────────────────────────────────┤      │
 │    lib/utils.ts (helpers) ────────────────────────┘      │
 └──────────────────┬───────────────────────────────────────┘
@@ -195,6 +215,8 @@ ems-trd-dtc/
 │        ▼                                                 │
 │  MariaDB 10.11 (Docker / Synology NAS)                   │
 │    tables: users, sessions, login_attempts,               │
+│            authenticators, webauthn_challenges,           │
+│            two_factor_backup_codes, two_factor_challenges, │
 │            tasks, kanban_columns,                         │
 │            leaves, leave_rules,                           │
 │            departments, positions, position_seconds,      │
@@ -226,9 +248,13 @@ ems-trd-dtc/
 
 | Model | Key Fields | Relations |
 |---|---|---|
-| **User** | id, email, username, password, prefix, name, role, department, division, position, positionSecond, positionLevel, phone, birthday, address, avatar, profileImage, isActive | → tasks, leaves, sessions, loginAttempts, supplyTransactions, checkoutsHeld, checkoutsIssued, assetsHeld |
+| **User** | id, email, username, password, prefix, name, role, department, division, position, positionSecond, positionLevel, phone, birthday, address, avatar, profileImage, isActive, **twoFactorEnabled**, **twoFactorSecret** (encrypted) | → tasks, leaves, sessions, loginAttempts, **authenticators**, **backupCodes**, supplyTransactions, checkoutsHeld, checkoutsIssued, assetsHeld |
 | **Session** | id, userId, token (unique), expiresAt, ipAddress, userAgent, isValid | → User |
 | **LoginAttempt** | id, userId?, username, ipAddress, success, reason | → User? |
+| **Authenticator** *(passkey)* | id, credentialId (unique), publicKey (base64url), counter, transports, deviceType, backedUp, name, userId, lastUsedAt | → User |
+| **WebAuthnChallenge** | id (cuid), challenge, userId?, expiresAt | — (temp, cookie-referenced) |
+| **TwoFactorBackupCode** | id, userId, codeHash (bcrypt), usedAt? | → User |
+| **TwoFactorChallenge** | id (cuid), userId, pendingSecret? (encrypted), attempts, expiresAt | — (temp, `2fa_pending` cookie) |
 | **KanbanColumn** | id, name, color, order, isDefault | → tasks |
 | **Task** | id, title, description, columnId, priority, assigneeId, reminderAt, archivedAt | → KanbanColumn, User? |
 | **Leave** | id, userId, type, startDate, endDate, reason, status, approvedBy, approvedAt, isHalfDay, hours, totalDays, contactAddress | → User |
@@ -273,6 +299,7 @@ ems-trd-dtc/
 | Schema | Validates |
 |---|---|
 | `loginSchema` | username (alphanum+_, 3-100), password (8-128) |
+| `passkeyLoginSchema` | username only (start passkey login) |
 | `createUserSchema` | email, username, password (upper+lower+digit), prefix, name, role, department |
 | `createTaskSchema` | title (1-255), description (max 1000), priority enum, columnId, assigneeId |
 | `createLeaveSchema` | type enum, startDate/endDate (YYYY-MM-DD), reason (1-500), isHalfDay, hours, contactAddress; endDate ≥ startDate |
@@ -284,6 +311,11 @@ ems-trd-dtc/
 | `createCheckoutSchema` | assetId, holderId, issuedById (optional override), expectedReturnAt, notes |
 
 **Security utilities:** `hashPassword`, `verifyPassword`, `sanitizeInput`, `generateSecureToken` (uses `crypto.randomBytes`), `generateAvatarInitials`
+
+**2FA helpers (`src/lib/twofactor.ts`):** `generateTotpSecret`, `buildOtpAuthUri`, `verifyTotp` (otplib), `generateBackupCodes`/`findMatchingBackupCode`/`normalizeBackupCode`, `createPendingChallenge`/`getPendingChallenge`/`bumpChallengeAttempts`/`finishChallenge` (uses `2fa_pending` cookie)
+**Crypto (`src/lib/crypto.ts`):** `encrypt`/`decrypt` — AES-256-GCM, key from `TWO_FACTOR_ENC_KEY` (base64 32 bytes)
+**Passkey helpers (`src/lib/webauthn.ts`):** `getRpConfig`, `toBase64url`/`fromBase64url`, `parseTransports`/`serializeTransports`, `storeChallenge`/`consumeChallenge`
+**Session (`src/lib/auth.ts`):** `createSession(userId, request)` — shared by password/2FA/passkey login
 
 ---
 
@@ -319,6 +351,19 @@ SQL injection: parameterized queries via Prisma — no raw SQL
 
 Role field protection: non-admin users cannot update position, department,
   division, positionLevel via PATCH /api/users/[id]
+
+Two-factor (2FA / TOTP) — MANDATORY on password login:
+  – /api/auth/login verifies password then returns requires2FA (no session yet)
+  – mode VERIFY (enrolled) or ENROLL (forced first-time setup) via 2fa_pending cookie
+  – session is issued only after /api/auth/2fa/verify or /enable succeeds
+  – TOTP secret encrypted at rest (AES-256-GCM, crypto.ts); backup codes bcrypt-hashed, one-time
+  – per-challenge attempt cap (5) + IP rate-limit on verify; admin can reset a user's 2FA
+  – re-enroll guard: setup/enable refuse if user already has 2FA enabled
+
+Passkey (WebAuthn) — alternative login, EXEMPT from 2FA (already strong MFA):
+  – register while authenticated (settings); login by username → assertion → session
+  – Authenticator stores credentialId + publicKey + counter; counter checked to prevent replay
+  – RP config from env (RP_ID/RP_NAME/WEBAUTHN_ORIGIN); RP_ID must be a domain, not a bare IP
 ```
 
 ---
@@ -385,23 +430,41 @@ Helper functions in `lib/auth.ts`:
 [DB] assetCheckout.returnedAt = now; asset.status = AVAILABLE
 ```
 
-### Authentication Flow
+### Authentication Flow (password + mandatory 2FA)
 ```
 [Login Page]
   │ POST /api/auth/login {username, password}
   ▼
 [API] Zod validate → dbRateLimit.isRateLimited(ip)
   │ user.findUnique({username}) → bcrypt.compare(password, hash)
-  │ session.create({token: crypto.randomBytes(), expiresAt: +24h})
-  │ Set HttpOnly cookie: session_token
+  │ createPendingChallenge(userId) → set 2fa_pending cookie  (NO session yet)
+  │ return { requires2FA, mode: twoFactorEnabled ? 'VERIFY' : 'ENROLL' }
   ▼
-[Client] cookie stored → router.push('/dashboard')
-  │ All subsequent calls: cookie sent automatically
+[Client] if ENROLL: POST /api/auth/2fa/setup → show QR → POST /api/auth/2fa/enable {code}
+  │        if VERIFY: POST /api/auth/2fa/verify {code|backupCode}
+  ▼
+[API] verify TOTP (or backup code) → createSession() → Set HttpOnly cookie: session_token
+  │ enable also: twoFactorEnabled=true, store encrypted secret, issue 10 backup codes
+  ▼
+[Client] router.push('/dashboard') — all later calls send cookie automatically
   ▼
 [API] requireAuth(request) → session.findUnique({token})
   │ checks: session.isValid, expiresAt, user.isActive
   ▼
 returns SessionUser { id, email, username, name, role, avatar }
+```
+
+### Passkey (WebAuthn) Login Flow — skips 2FA
+```
+[Login Page] "เข้าสู่ระบบด้วย passkey", username entered
+  │ POST /api/auth/passkey/login/options {username}
+  ▼
+[API] generateAuthenticationOptions(allowCredentials) → storeChallenge → return options
+  │ [Client] startAuthentication() → POST /api/auth/passkey/login/verify {response}
+  ▼
+[API] verifyAuthenticationResponse → update counter → createSession() → session_token cookie
+  ▼
+[Client] router.push('/dashboard')
 ```
 
 ---
@@ -415,6 +478,14 @@ NEXTAUTH_SECRET=<openssl rand -base64 32>
 NEXTAUTH_URL=http://localhost:3000
 NODE_ENV=development|production
 COOKIE_SAMESITE=strict|lax|none   (optional)
+
+# Passkey (WebAuthn) — RP_ID must be a registrable domain, NOT a bare IP
+RP_ID=localhost                   # prod: real hostname over HTTPS
+RP_NAME=EMS TRD DTC               # also used as 2FA TOTP issuer
+WEBAUTHN_ORIGIN=http://localhost:3000
+
+# 2FA — encrypts TOTP secret at rest; back it up (losing it forces re-enrollment)
+TWO_FACTOR_ENC_KEY=<openssl rand -base64 32>
 ```
 
 ### `next.config.js`
@@ -437,7 +508,11 @@ COOKIE_SAMESITE=strict|lax|none   (optional)
 | react / react-dom | ^19.0.0 | UI |
 | prisma / @prisma/client | ^5.7.0 | ORM |
 | zod | ^3.22.4 | Validation |
-| bcryptjs | ^2.4.3 | Password hashing |
+| bcryptjs | ^2.4.3 | Password hashing + backup-code hashing |
+| @simplewebauthn/server | ^13 | Passkey (WebAuthn) server verification |
+| @simplewebauthn/browser | ^13 | Passkey client ceremony (startRegistration/Authentication) |
+| otplib | ^13 | TOTP generate/verify (2FA) |
+| qrcode | ^1 | 2FA enrollment QR (data URL) |
 | exceljs | ^4.4.0 | Supplies Excel export (styled) |
 | xlsx | ^0.18.5 | Assets Excel export |
 | file-type | ^22.0.1 | Server-side MIME detection for uploads |
@@ -455,7 +530,7 @@ COOKIE_SAMESITE=strict|lax|none   (optional)
 | tailwindcss | ^3.4.0 |
 | prisma (CLI) | ^5.7.0 |
 | tsx | ^4.7.0 |
-| @types/node, react, bcryptjs | various |
+| @types/node, react, bcryptjs, qrcode | various |
 
 ---
 
@@ -468,7 +543,9 @@ COOKIE_SAMESITE=strict|lax|none   (optional)
 | `src/proxy.ts:27` | CORS allows wildcard in dev — should specify explicit domain for production. | Medium |
 | All GET supply/asset routes | No `isManagerOrAbove` check — EMPLOYEE role can enumerate all supplies, transactions, and asset checkouts. | Medium |
 | No test files | Zero unit/integration tests across the entire codebase. | High |
-| Session cleanup | Expired sessions accumulate in DB — no cron job to prune `sessions` table. | Medium |
+| Session cleanup | Expired sessions accumulate in DB — no cron job to prune `sessions` table. Same applies to `webauthn_challenges` and `two_factor_challenges` (only deleted on success/expiry-hit; abandoned login flows leave rows). | Medium |
+| Hand-written migrations | `add_passkey_webauthn` and `add_two_factor` migration SQL was authored by hand (NAS DB unreachable from dev). Verify with `prisma migrate status` after `migrate deploy`; the 2FA one does `ALTER TABLE users`. | Medium |
+| Mandatory 2FA rollout | All existing users are forced into 2FA enrollment at next login. Admin-reset endpoint (`DELETE /api/auth/2fa/[userId]`) covers lost devices; ensure ≥1 admin can enroll. | Low |
 | `LeaveForm.tsx` | Fiscal year calc (Oct 1–Sep 30) duplicated in `leave-stats` API. Should be a shared utility. | Low |
 | `src/lib/logger.ts` | Production JSON logs have no rotation/shipping configured. | Low |
 

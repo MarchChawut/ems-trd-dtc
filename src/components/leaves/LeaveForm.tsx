@@ -11,9 +11,6 @@ import React, { useRef, useState } from "react";
 import { Printer, X, FileDown, Loader2 } from "lucide-react";
 import { Leave, LeaveType, User, Holiday } from "@/types";
 import { formatSignatureName } from "@/lib/utils";
-import { generateLeavePDF } from "./LeaveFormPDF";
-import "./pdf-fonts";
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 
 interface LeaveFormProps {
   leave: Leave & { user: User };
@@ -61,10 +58,11 @@ interface TypeStats {
 const leaveTypeLabels: Record<LeaveType, { short: string; full: string }> = {
   SICK: { short: "ป่วย", full: "ลาป่วย" },
   PERSONAL: { short: "กิจ", full: "ลากิจ" },
-  VACATION: { short: "พักร้อน", full: "ลาพักร้อน" },
   MATERNITY: { short: "คลอดบุตร", full: "ลาคลอดบุตร" },
   ORDINATION: { short: "บวช", full: "ลาบวช" },
   EARLY_LEAVE: { short: "ออกก่อนเวลา", full: "ออกก่อนเวลา" },
+  LATE_ARRIVAL: { short: "มาสาย", full: "มาสาย" },
+  RUN_AN_ERRAND: { short: "ออกนอกเขต", full: "ออกนอกเขตพระราชฐาน" },
   OTHER: { short: "อื่นๆ", full: "ลาอื่นๆ" },
 };
 
@@ -323,6 +321,11 @@ export default function LeaveForm({
   const handleExportPDF = async () => {
     try {
       setIsGeneratingPDF(true);
+      // โหลด @react-pdf/renderer เฉพาะตอนสร้าง PDF จริง (ไม่รวมใน bundle หลักของหน้าลา)
+      // ต้อง import ./LeaveFormPDF ก่อน ./pdf-fonts เสมอ เพราะ pdf-fonts ต้องทับฟอนต์ Google Fonts
+      // ด้วยฟอนต์ THSarabun.ttf ในเครื่อง (กันปัญหาเซิร์ฟเวอร์ intranet ต่ออินเทอร์เน็ตออกไปโหลดฟอนต์ไม่ได้)
+      const { generateLeavePDF } = await import("./LeaveFormPDF");
+      await import("./pdf-fonts");
       const blob = await generateLeavePDF(leave, stats);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");

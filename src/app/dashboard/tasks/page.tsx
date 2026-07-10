@@ -9,7 +9,7 @@
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Plus, 
@@ -102,6 +102,7 @@ export default function TasksPage() {
     priority: 'MEDIUM' as TaskPriority,
     columnId: '',
     assigneeId: '',
+    reminderAt: '',
   });
   
   // State สำหรับข้อมูลคอลัมน์ใหม่
@@ -265,6 +266,7 @@ export default function TasksPage() {
           priority: 'MEDIUM',
           columnId: '',
           assigneeId: '',
+          reminderAt: '',
         });
       }
     } catch (err) {
@@ -547,6 +549,17 @@ export default function TasksPage() {
   // ตรวจสอบสิทธิ์จัดการคอลัมน์
   const canManageColumns = ['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(userRole);
 
+  // จัดกลุ่มงานตามคอลัมน์ (คำนวณครั้งเดียวแทนการ filter ซ้ำต่อคอลัมน์ทุก render)
+  const tasksByColumn = useMemo(() => {
+    const map = new Map<number, typeof tasks>();
+    for (const t of tasks) {
+      const key = Number(t.columnId);
+      const arr = map.get(key);
+      if (arr) arr.push(t); else map.set(key, [t]);
+    }
+    return map;
+  }, [tasks]);
+
   // แสดง loading ขณะโหลดข้อมูล
   if (isLoading) {
     return (
@@ -647,7 +660,7 @@ export default function TasksPage() {
         <div className="flex gap-6 min-w-max">
           {sortedColumns.map((column) => {
             const colors = columnColors[column.color] || columnColors.slate;
-            const columnTasks = tasks.filter(t => t.columnId === column.id);
+            const columnTasks = tasksByColumn.get(column.id) || [];
             
             return (
               <div
@@ -716,7 +729,10 @@ export default function TasksPage() {
                           </span>
                         )}
                         {task.reminderAt && (
-                          <Bell size={12} className="text-amber-500" />
+                          <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
+                            <Bell size={12} />
+                            {new Date(task.reminderAt).toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         )}
                       </div>
 
@@ -835,6 +851,19 @@ export default function TasksPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  <span className="flex items-center gap-1.5"><Clock size={14} /> กำหนดการ (วัน/เวลา)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
+                  value={newTask.reminderAt}
+                  onChange={(e) => setNewTask({ ...newTask, reminderAt: e.target.value })}
+                />
+                <p className="text-xs text-slate-400 mt-1">เมื่อถึงเวลานี้ ระบบจะส่งแจ้งเตือนเข้ากลุ่ม LINE ให้อัตโนมัติ</p>
               </div>
 
               <button
@@ -1070,6 +1099,7 @@ export default function TasksPage() {
                       value={editForm.reminderAt}
                       onChange={(e) => setEditForm({ ...editForm, reminderAt: e.target.value })}
                     />
+                    <p className="text-xs text-slate-400 mt-1">เมื่อถึงเวลานี้ ระบบจะส่งแจ้งเตือนเข้ากลุ่ม LINE ให้อัตโนมัติ</p>
                     {editForm.reminderAt && (
                       <button
                         type="button"
@@ -1152,6 +1182,11 @@ export default function TasksPage() {
                           <span className="font-medium text-slate-800">
                             {new Date(selectedTask.reminderAt).toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </span>
+                          {selectedTask.reminderSentAt ? (
+                            <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">ส่งเข้ากลุ่ม LINE แล้ว</span>
+                          ) : (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">รอส่ง</span>
+                          )}
                         </>
                       ) : (
                         <>

@@ -14,6 +14,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:import-assets": "tsx scripts/import-assets.ts",
     "db:migrate-uploads": "tsx scripts/migrate-uploads-to-db.ts",
+    "db:fix-leave-years": "tsx scripts/fix-leave-buddhist-years.ts",
+    "db:fix-html-entities": "tsx scripts/fix-html-entity-escaped-text.ts",
     "db:backup": "tsx scripts/backup.ts",
     "db:backup:list": "tsx scripts/backup.ts list",
     "db:restore": "tsx scripts/backup.ts restore"

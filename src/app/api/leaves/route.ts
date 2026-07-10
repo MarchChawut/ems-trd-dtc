@@ -7,9 +7,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createLeaveSchema, sanitizeInput } from '@/lib/security';
+import { createLeaveSchema } from '@/lib/security';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { toSafeGregorianDate } from '@/lib/utils';
 
 /**
  * GET /api/leaves
@@ -17,13 +18,16 @@ import { logger } from '@/lib/logger';
  * 
  * Query Parameters:
  * - status: กรองตามสถานะ (PENDING, APPROVED, REJECTED)
- * - type: กรองตามประเภท (SICK, PERSONAL, VACATION, OTHER)
+ * - type: กรองตามประเภท (SICK, PERSONAL, MATERNITY, OTHER, ...)
  * - userId: กรองตามผู้ใช้
- * 
+ * - page: หน้าที่ต้องการ (เริ่มที่ 1, ค่าเริ่มต้น 1)
+ * - limit: จำนวนต่อหน้า (ค่าเริ่มต้น 50, สูงสุด 200)
+ *
  * Response:
  * {
  *   success: true,
- *   data: Leave[]
+ *   data: Leave[],
+ *   meta: { total, page, limit, hasMore }
  * }
  */
 export async function GET(request: NextRequest) {
@@ -44,6 +48,8 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
     const type = searchParams.get('type');
     const userId = searchParams.get('userId');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '50') || 50));
 
     // สร้าง where clause
     const where: any = {};
@@ -63,30 +69,36 @@ export async function GET(request: NextRequest) {
       where.type = type;
     }
 
-    // ดึงข้อมูลการลา
-    const leaves = await prisma.leave.findMany({
-      where,
-      include: {
-        user: {
-          select: {
-            id: true,
-            prefix: true,
-            name: true,
-            avatar: true,
-            department: true,
-            division: true,
-            position: true,
-            phone: true,
-            address: true,
+    // ดึงข้อมูลการลา (แบ่งหน้า)
+    const [leaves, total] = await Promise.all([
+      prisma.leave.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              prefix: true,
+              name: true,
+              avatar: true,
+              department: true,
+              division: true,
+              position: true,
+              phone: true,
+              address: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.leave.count({ where }),
+    ]);
 
     return NextResponse.json({
       success: true,
       data: leaves,
+      meta: { total, page, limit, hasMore: page * limit < total },
     });
 
   } catch (error) {
@@ -154,7 +166,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { type, startDate, endDate, reason, isHalfDay, hours, contactAddress } = validationResult.data;
+    const { type, startDate, endDate, reason, isHalfDay, hours, outTime, backTime, formCategory, contactAddress } = validationResult.data;
 
     // กำหนด userId สำหรับการลา
     let targetUserId = currentUser.id;
@@ -190,8 +202,8 @@ export async function POST(request: NextRequest) {
       totalDays = 0.5;
     } else {
       // ดึงวันหยุดจากฐานข้อมูล
-      const start = new Date(startDate);
-      const end = new Date(endDate);
+      const start = toSafeGregorianDate(startDate);
+      const end = toSafeGregorianDate(endDate);
       
       let holidays: Date[] = [];
       try {
@@ -232,14 +244,17 @@ export async function POST(request: NextRequest) {
       data: {
         userId: targetUserId,
         type,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        reason: sanitizeInput(reason),
+        startDate: toSafeGregorianDate(startDate),
+        endDate: toSafeGregorianDate(endDate),
+        reason,
         status: 'PENDING',
         isHalfDay: isHalfDay || false,
         hours: hours || null,
+        outTime: outTime || null,
+        backTime: backTime || null,
+        formCategory: formCategory || null,
         totalDays,
-        contactAddress: contactAddress ? sanitizeInput(contactAddress) : null,
+        contactAddress: contactAddress || null,
       },
       include: {
         user: {

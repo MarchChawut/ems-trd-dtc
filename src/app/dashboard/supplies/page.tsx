@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus, Search, Download, Loader2, X, Package,
   AlertTriangle, ChevronDown, FileText, History, Tag, Settings
@@ -210,7 +210,7 @@ export default function SuppliesPage() {
   // ----------------------------------------
 
   // Detect duplicate names within same type
-  const allDuplicateGroups = Object.entries(
+  const allDuplicateGroups = useMemo(() => Object.entries(
     supplies.filter(s => s.isActive).reduce((acc, s) => {
       const key = `${s.name.trim().toLowerCase()}__${s.type}`;
       if (!acc[key]) acc[key] = [];
@@ -219,9 +219,9 @@ export default function SuppliesPage() {
     }, {} as Record<string, Supply[]>)
   )
     .filter(([, group]) => group.length > 1)
-    .map(([key, group]) => ({ key, group: group.sort((a, b) => a.id - b.id) }));
+    .map(([key, group]) => ({ key, group: group.sort((a, b) => a.id - b.id) })), [supplies]);
 
-  const filteredSupplies = supplies.filter(s => {
+  const filteredSupplies = useMemo(() => supplies.filter(s => {
     if (s.type !== activeTab) return false;
     if (categoryFilter && s.categoryId !== Number(categoryFilter)) return false;
     if (searchQuery) {
@@ -231,7 +231,7 @@ export default function SuppliesPage() {
         (s.documentNumber || '').toLowerCase().includes(q);
     }
     return true;
-  });
+  }), [supplies, activeTab, categoryFilter, searchQuery]);
 
   // ----------------------------------------
   // Supply CRUD

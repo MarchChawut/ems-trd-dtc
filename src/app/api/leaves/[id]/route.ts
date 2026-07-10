@@ -7,9 +7,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createLeaveSchema, sanitizeInput } from '@/lib/security';
+import { createLeaveSchema } from '@/lib/security';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { toSafeGregorianDate } from '@/lib/utils';
 
 /**
  * PUT /api/leaves/[id]
@@ -80,7 +81,7 @@ export async function PUT(
       );
     }
 
-    const { type, startDate, endDate, reason, isHalfDay, hours, contactAddress } = validationResult.data;
+    const { type, startDate, endDate, reason, isHalfDay, hours, outTime, backTime, formCategory, contactAddress } = validationResult.data;
 
     // คำนวณจำนวนวันลา
     let totalDays = 0;
@@ -89,8 +90,8 @@ export async function PUT(
     } else if (isHalfDay) {
       totalDays = 0.5;
     } else {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
+      const start = toSafeGregorianDate(startDate);
+      const end = toSafeGregorianDate(endDate);
 
       let holidays: Date[] = [];
       try {
@@ -120,13 +121,16 @@ export async function PUT(
       where: { id: leaveId },
       data: {
         type,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        reason: sanitizeInput(reason),
+        startDate: toSafeGregorianDate(startDate),
+        endDate: toSafeGregorianDate(endDate),
+        reason,
         isHalfDay: isHalfDay || false,
         hours: hours || null,
+        outTime: outTime || null,
+        backTime: backTime || null,
+        formCategory: formCategory || null,
         totalDays,
-        contactAddress: contactAddress ? sanitizeInput(contactAddress) : null,
+        contactAddress: contactAddress || null,
       },
       include: {
         user: {

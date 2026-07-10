@@ -11,7 +11,7 @@
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Plus,
@@ -31,8 +31,8 @@ import {
   FileSpreadsheet,
   Pencil
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Leave, LeaveType, LeaveStatus, User, Holiday } from '@/types';
+import { cn, safeGetGregorianYear } from '@/lib/utils';
+import { Leave, LeaveType, LeaveStatus, LeaveFormCategory, User, Holiday } from '@/types';
 import LeaveForm from '@/components/leaves/LeaveForm';
 
 /**
@@ -41,12 +41,19 @@ import LeaveForm from '@/components/leaves/LeaveForm';
 const leaveTypeConfig: Record<LeaveType, { label: string; bg: string; text: string; icon: string }> = {
   SICK: { label: 'ลาป่วย', bg: 'bg-rose-100', text: 'text-rose-600', icon: '🏥' },
   PERSONAL: { label: 'ลากิจ', bg: 'bg-amber-100', text: 'text-amber-600', icon: '💼' },
-  VACATION: { label: 'ลาพักร้อน', bg: 'bg-blue-100', text: 'text-blue-600', icon: '🏖️' },
   MATERNITY: { label: 'ลาคลอดบุตร', bg: 'bg-pink-100', text: 'text-pink-600', icon: '👶' },
   ORDINATION: { label: 'ลาบวช', bg: 'bg-purple-100', text: 'text-purple-600', icon: '🧘' },
   EARLY_LEAVE: { label: 'ออกก่อนเวลา', bg: 'bg-orange-100', text: 'text-orange-600', icon: '🕐' },
+  LATE_ARRIVAL: { label: 'มาสาย', bg: 'bg-yellow-100', text: 'text-yellow-700', icon: '⏰' },
+  RUN_AN_ERRAND: { label: 'ออกนอกเขตพระราชฐาน', bg: 'bg-cyan-100', text: 'text-cyan-600', icon: '🚶' },
   OTHER: { label: 'อื่นๆ', bg: 'bg-slate-100', text: 'text-slate-600', icon: '📝' },
 };
+
+// ประเภทลาที่ใช้ตัวเลือก "เวลาออก / เวลากลับ" แทนปุ่มเลือกจำนวนชั่วโมง
+const TIME_RANGE_TYPES: LeaveType[] = ['LATE_ARRIVAL', 'EARLY_LEAVE', 'RUN_AN_ERRAND'];
+
+// จำนวนรายการลาต่อหน้า (แบ่งหน้าเพื่อไม่ให้ดึงข้อมูลทั้งตารางในครั้งเดียว)
+const LEAVES_PAGE_SIZE = 50;
 
 /**
  * สีและข้อความของสถานะการลา
@@ -66,7 +73,6 @@ interface UserLeaveStats {
     totalLeaves: number;
     sickDays: number;
     personalDays: number;
-    vacationDays: number;
     pending: number;
     approved: number;
     rejected: number;
@@ -82,6 +88,9 @@ export default function LeavesPage() {
   
   // State สำหรับเก็บรายการลา
   const [leaves, setLeaves] = useState<Leave[]>([]);
+  const [leavesPage, setLeavesPage] = useState(1);
+  const [hasMoreLeaves, setHasMoreLeaves] = useState(false);
+  const [isLoadingMoreLeaves, setIsLoadingMoreLeaves] = useState(false);
   
   // State สำหรับเก็บรายชื่อผู้ใช้ (สำหรับเลือกผู้ขอลา)
   const [users, setUsers] = useState<User[]>([]);
@@ -112,13 +121,15 @@ export default function LeavesPage() {
   const [searchType, setSearchType] = useState<'name' | 'date'>('name');
   const [searchName, setSearchName] = useState('');
   const [searchDate, setSearchDate] = useState('');
-  
+  const [searchFormCategory, setSearchFormCategory] = useState<LeaveFormCategory | null>(null);
+
   // State สำหรับ Export
   const [exportName, setExportName] = useState('');
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
+  const [exportFormCategory, setExportFormCategory] = useState<LeaveFormCategory | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  
+
   // State สำหรับข้อมูลการลาใหม่
   const [newLeave, setNewLeave] = useState({
     userId: '',
@@ -127,11 +138,15 @@ export default function LeavesPage() {
     endDate: '',
     reason: '',
     contactAddress: '',
+    formCategory: null as LeaveFormCategory | null,
   });
   // โหมดการลา: fullday / halfday / hours
   const [leaveMode, setLeaveMode] = useState<'fullday' | 'halfday' | 'hours'>('fullday');
   const [halfDayPeriod, setHalfDayPeriod] = useState<'MORNING' | 'AFTERNOON'>('MORNING');
   const [leaveHours, setLeaveHours] = useState<number>(1);
+  // เวลาออก/เวลากลับ (HH:mm) ใช้เฉพาะประเภทลาใน TIME_RANGE_TYPES (มาสาย/ออกก่อนเวลา/ออกนอกเขตฯ)
+  const [leaveTimeOut, setLeaveTimeOut] = useState<string>('');
+  const [leaveTimeBack, setLeaveTimeBack] = useState<string>('');
 
   // State สำหรับโหมดแก้ไข
   const [isEditMode, setIsEditMode] = useState(false);
@@ -150,6 +165,7 @@ export default function LeavesPage() {
     status: true,
     approvedBy: true,
     createdAt: true,
+    formCategory: true,
   });
 
   // State สำหรับวันหยุด
@@ -165,52 +181,70 @@ export default function LeavesPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // ดึงข้อมูลทั้งหมดพร้อมกัน (leaves/users ต้องสำเร็จ, holidays/session ล้มเหลวได้โดยไม่กระทบส่วนอื่น)
+        const [leavesResponse, usersResponse, holidaysData, sessionData] = await Promise.all([
+          fetch(`/api/leaves?page=1&limit=${LEAVES_PAGE_SIZE}`),
+          fetch('/api/users'),
+          fetch(`/api/holidays?year=${new Date().getFullYear()}`).then(r => r.json()).catch(() => null),
+          fetch('/api/auth/session').then(r => r.json()).catch(() => null),
+        ]);
+
         // ดึงข้อมูลการลา
-        const leavesResponse = await fetch('/api/leaves');
         const leavesData = await leavesResponse.json();
-        
         if (!leavesResponse.ok) {
           throw new Error(leavesData.message || 'ไม่สามารถดึงข้อมูลการลาได้');
         }
-        
         if (leavesData.success) {
           setLeaves(leavesData.data);
+          setLeavesPage(1);
+          setHasMoreLeaves(Boolean(leavesData.meta?.hasMore));
         }
-        
+
         // ดึงข้อมูลผู้ใช้ (สำหรับเลือกผู้ขอลา)
-        const usersResponse = await fetch('/api/users');
         const usersData = await usersResponse.json();
-        
         if (usersResponse.ok && usersData.success) {
           setUsers(usersData.data);
         }
 
         // ดึงข้อมูลวันหยุด
-        try {
-          const holidaysResponse = await fetch(`/api/holidays?year=${new Date().getFullYear()}`);
-          const holidaysData = await holidaysResponse.json();
-          if (holidaysData.success) {
-            setHolidays(holidaysData.data);
-          }
-        } catch {}
+        if (holidaysData?.success) {
+          setHolidays(holidaysData.data);
+        }
 
         // ตรวจสอบสิทธิ์ admin
-        try {
-          const sessionRes = await fetch('/api/auth/session');
-          const sessionData = await sessionRes.json();
-          if (sessionData.success && ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(sessionData.data.user.role)) {
-            setCanManage(true);
-          }
-        } catch {}
+        if (sessionData?.success && ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(sessionData.data.user.role)) {
+          setCanManage(true);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
       } finally {
         setIsLoading(false);
       }
     };
-    
+
     fetchData();
   }, []);
+
+  /**
+   * โหลดรายการลาหน้าถัดไป (เพิ่มต่อท้ายรายการที่มีอยู่)
+   */
+  const loadMoreLeaves = async () => {
+    try {
+      setIsLoadingMoreLeaves(true);
+      const nextPage = leavesPage + 1;
+      const response = await fetch(`/api/leaves?page=${nextPage}&limit=${LEAVES_PAGE_SIZE}`);
+      const data = await response.json();
+      if (data.success) {
+        setLeaves([...leaves, ...data.data]);
+        setLeavesPage(nextPage);
+        setHasMoreLeaves(Boolean(data.meta?.hasMore));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
+    } finally {
+      setIsLoadingMoreLeaves(false);
+    }
+  };
 
   /**
    * ดึงข้อมูลสถิติรายบุคคล
@@ -244,19 +278,25 @@ export default function LeavesPage() {
   const handleSearch = async () => {
     try {
       setIsLoading(true);
-      
-      let url = '/api/leaves/search?';
+
+      const params: string[] = [];
       if (searchType === 'name' && searchName) {
-        url += `name=${encodeURIComponent(searchName)}`;
+        params.push(`name=${encodeURIComponent(searchName)}`);
       } else if (searchType === 'date' && searchDate) {
-        url += `date=${searchDate}`;
+        params.push(`date=${searchDate}`);
       }
-      
+      if (searchFormCategory) {
+        params.push(`formCategory=${searchFormCategory}`);
+      }
+      const url = `/api/leaves/search?${params.join('&')}`;
+
       const response = await fetch(url);
       const data = await response.json();
-      
+
       if (data.success) {
         setLeaves(data.data);
+        // ผลค้นหาไม่แบ่งหน้า (จำกัดสูงสุด 200 รายการที่ API) จึงไม่มี "โหลดเพิ่มเติม"
+        setHasMoreLeaves(false);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
@@ -271,13 +311,17 @@ export default function LeavesPage() {
   const resetSearch = async () => {
     setSearchName('');
     setSearchDate('');
-    
+    setSearchFormCategory(null);
+
+
     try {
-      const response = await fetch('/api/leaves');
+      const response = await fetch(`/api/leaves?page=1&limit=${LEAVES_PAGE_SIZE}`);
       const data = await response.json();
-      
+
       if (data.success) {
         setLeaves(data.data);
+        setLeavesPage(1);
+        setHasMoreLeaves(Boolean(data.meta?.hasMore));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
@@ -302,6 +346,9 @@ export default function LeavesPage() {
       }
       if (exportEndDate) {
         params.push(`endDate=${exportEndDate}`);
+      }
+      if (exportFormCategory) {
+        params.push(`formCategory=${exportFormCategory}`);
       }
 
       // ส่งคอลัมน์ที่เลือก
@@ -354,12 +401,17 @@ export default function LeavesPage() {
       type: leave.type,
       startDate: new Date(leave.startDate).toISOString().split('T')[0],
       endDate: new Date(leave.endDate).toISOString().split('T')[0],
-      reason: leave.reason.replace(/^\[(ครึ่งวันเช้า|ครึ่งวันบ่าย|ลา [\d.]+ ชม\.)\]\s*/, ''),
+      reason: leave.reason.replace(/^\[(ครึ่งวันเช้า|ครึ่งวันบ่าย|ลา [\d.]+ ชม\.|เวลาออก \d{2}:\d{2} - เวลากลับ \d{2}:\d{2})\]\s*/, ''),
       contactAddress: (leave as any).contactAddress || '',
+      formCategory: leave.formCategory || null,
     });
     if (leave.isHalfDay) {
       setLeaveMode('halfday');
       setHalfDayPeriod(leave.reason.includes('ครึ่งวันบ่าย') ? 'AFTERNOON' : 'MORNING');
+    } else if (TIME_RANGE_TYPES.includes(leave.type) && leave.outTime && leave.backTime) {
+      setLeaveMode('hours');
+      setLeaveTimeOut(leave.outTime);
+      setLeaveTimeBack(leave.backTime);
     } else if (leave.hours && leave.hours > 0) {
       setLeaveMode('hours');
       setLeaveHours(leave.hours);
@@ -384,14 +436,24 @@ export default function LeavesPage() {
       setError('กรุณาระบุวันที่สิ้นสุด');
       return;
     }
+    const isTimeRangeType = leaveMode === 'hours' && TIME_RANGE_TYPES.includes(newLeave.type);
+    // ถ้าเป็นประเภทที่ใช้เวลาออก-เวลากลับ ต้องกรอกครบและเวลากลับต้องมากกว่าเวลาออก
+    if (isTimeRangeType && (!leaveTimeOut || !leaveTimeBack || timeRangeToHours(leaveTimeOut, leaveTimeBack) <= 0)) {
+      setError('กรุณาระบุเวลาออกและเวลากลับให้ถูกต้อง (เวลากลับต้องมากกว่าเวลาออก)');
+      return;
+    }
 
     try {
       const payload: Record<string, any> = {
         ...newLeave,
         userId: parseInt(newLeave.userId),
         isHalfDay: leaveMode === 'halfday',
-        hours: leaveMode === 'hours' ? leaveHours : undefined,
+        hours: leaveMode === 'hours' ? (isTimeRangeType ? timeRangeToHours(leaveTimeOut, leaveTimeBack) : leaveHours) : undefined,
       };
+      if (isTimeRangeType) {
+        payload.outTime = leaveTimeOut;
+        payload.backTime = leaveTimeBack;
+      }
       // ถ้าลาครึ่งวันหรือลาเป็นชม. ให้ endDate = startDate
       if (leaveMode === 'halfday' || leaveMode === 'hours') {
         payload.endDate = newLeave.startDate;
@@ -402,7 +464,9 @@ export default function LeavesPage() {
         payload.reason = `[${periodLabel}] ${newLeave.reason}`;
       }
       if (leaveMode === 'hours') {
-        payload.reason = `[ลา ${leaveHours} ชม.] ${newLeave.reason}`;
+        payload.reason = isTimeRangeType
+          ? `[เวลาออก ${leaveTimeOut} - เวลากลับ ${leaveTimeBack}] ${newLeave.reason}`
+          : `[ลา ${leaveHours} ชม.] ${newLeave.reason}`;
       }
 
       let response: Response;
@@ -444,10 +508,13 @@ export default function LeavesPage() {
           endDate: '',
           reason: '',
           contactAddress: '',
+          formCategory: null,
         });
         setLeaveMode('fullday');
         setHalfDayPeriod('MORNING');
         setLeaveHours(1);
+        setLeaveTimeOut('');
+        setLeaveTimeBack('');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
@@ -527,6 +594,27 @@ export default function LeavesPage() {
   };
 
   /**
+   * จัดรูปแบบวันที่ลาแบบ พ.ศ. อย่างปลอดภัย (ป้องกันบวก 543 ซ้ำ กรณี DB มีปี พ.ศ. ค้างจาก legacy data)
+   */
+  const formatLeaveDate = (date: string | Date): string => {
+    const d = new Date(date);
+    d.setFullYear(safeGetGregorianYear(d));
+    return d.toLocaleDateString('th-TH');
+  };
+
+  /**
+   * คำนวณจำนวนชั่วโมง (ทศนิยม) จากเวลาออก-เวลากลับ (HH:mm)
+   * คืนค่า 0 ถ้าข้อมูลไม่ครบหรือเวลากลับไม่มากกว่าเวลาออก
+   */
+  const timeRangeToHours = (out: string, back: string): number => {
+    if (!out || !back) return 0;
+    const [outH, outM] = out.split(':').map(Number);
+    const [backH, backM] = back.split(':').map(Number);
+    const diffMinutes = (backH * 60 + backM) - (outH * 60 + outM);
+    return diffMinutes > 0 ? diffMinutes / 60 : 0;
+  };
+
+  /**
    * เพิ่มวันหยุด
    */
   const handleAddHoliday = async () => {
@@ -582,6 +670,23 @@ export default function LeavesPage() {
       }
     } catch {}
   };
+
+  // ข้อมูลลาของผู้ใช้ที่กำลังเลือก (สำหรับ LeaveForm previousLeave/userLeaves)
+  const previousLeaveForSelected = useMemo(() => {
+    if (!selectedLeave) return null;
+    return leaves
+      .filter(l =>
+        l.userId === selectedLeave.userId &&
+        l.id !== selectedLeave.id &&
+        new Date(l.createdAt) < new Date(selectedLeave.createdAt)
+      )
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] || null;
+  }, [leaves, selectedLeave]);
+
+  const userLeavesForSelected = useMemo(() => {
+    if (!selectedLeave) return [];
+    return leaves.filter(l => l.userId === selectedLeave.userId);
+  }, [leaves, selectedLeave]);
 
   // แสดง loading ขณะโหลดข้อมูล
   if (isLoading && leaves.length === 0) {
@@ -844,6 +949,28 @@ export default function LeavesPage() {
             </button>
           </div>
         </div>
+
+        {/* กรองเพิ่มเติมด้วยประเภทแบบฟอร์ม */}
+        <div className="flex gap-4 mt-3">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={searchFormCategory === 'KBK'}
+              onChange={() => setSearchFormCategory(searchFormCategory === 'KBK' ? null : 'KBK')}
+              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span className="text-slate-600">เฉพาะแบบส่ง กบก.</span>
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={searchFormCategory === 'STATS'}
+              onChange={() => setSearchFormCategory(searchFormCategory === 'STATS' ? null : 'STATS')}
+              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span className="text-slate-600">เฉพาะแบบเก็บสถิติ</span>
+          </label>
+        </div>
       </div>
 
       {/* Dashboard สถิติรายบุคคล */}
@@ -867,7 +994,6 @@ export default function LeavesPage() {
                     <th className="py-3 px-4 text-sm font-semibold text-slate-600">พนักงาน</th>
                     <th className="py-3 px-4 text-sm font-semibold text-slate-600 text-center">ลาป่วย</th>
                     <th className="py-3 px-4 text-sm font-semibold text-slate-600 text-center">ลากิจ</th>
-                    <th className="py-3 px-4 text-sm font-semibold text-slate-600 text-center">ลาพักร้อน</th>
                     <th className="py-3 px-4 text-sm font-semibold text-slate-600 text-center">รวม (วัน)</th>
                     <th className="py-3 px-4 text-sm font-semibold text-slate-600 text-center">สถานะ</th>
                   </tr>
@@ -891,9 +1017,6 @@ export default function LeavesPage() {
                       </td>
                       <td className="py-3 px-4 text-center">
                         <span className="text-amber-600 font-medium">{item.stats.personalDays}</span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span className="text-blue-600 font-medium">{item.stats.vacationDays}</span>
                       </td>
                       <td className="py-3 px-4 text-center">
                         <span className="font-bold text-slate-700">{item.stats.totalDays}</span>
@@ -972,8 +1095,8 @@ export default function LeavesPage() {
                       <div className="flex items-center gap-1">
                         <Calendar size={14} />
                         <span>
-                          {new Date(leave.startDate).toLocaleDateString('th-TH')} - {' '}
-                          {new Date(leave.endDate).toLocaleDateString('th-TH')}
+                          {formatLeaveDate(leave.startDate)} - {' '}
+                          {formatLeaveDate(leave.endDate)}
                         </span>
                         <span className="text-slate-400">
                           ({leave.isHalfDay
@@ -1040,6 +1163,29 @@ export default function LeavesPage() {
         )}
       </div>
 
+      {/* โหลดรายการลาเพิ่มเติม */}
+      {hasMoreLeaves && (
+        <div className="flex justify-center">
+          <button
+            onClick={loadMoreLeaves}
+            disabled={isLoadingMoreLeaves}
+            className={cn(
+              "px-4 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors flex items-center gap-2",
+              isLoadingMoreLeaves && "opacity-70 cursor-not-allowed"
+            )}
+          >
+            {isLoadingMoreLeaves ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>กำลังโหลด...</span>
+              </>
+            ) : (
+              <span>โหลดเพิ่มเติม</span>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Modal บันทึกการลา */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1054,8 +1200,10 @@ export default function LeavesPage() {
                   setIsModalOpen(false);
                   setIsEditMode(false);
                   setEditingLeaveId(null);
-                  setNewLeave({ userId: '', type: 'SICK', startDate: '', endDate: '', reason: '', contactAddress: '' });
+                  setNewLeave({ userId: '', type: 'SICK', startDate: '', endDate: '', reason: '', contactAddress: '', formCategory: null });
                   setLeaveMode('fullday');
+                  setLeaveTimeOut('');
+                  setLeaveTimeBack('');
                 }}
                 className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"
               >
@@ -1096,12 +1244,44 @@ export default function LeavesPage() {
                 >
                   <option value="SICK">ลาป่วย</option>
                   <option value="PERSONAL">ลากิจ</option>
-                  <option value="VACATION">ลาพักร้อน</option>
                   <option value="MATERNITY">ลาคลอดบุตร</option>
                   <option value="ORDINATION">ลาบวช</option>
                   <option value="EARLY_LEAVE">ออกก่อนเวลา</option>
+                  <option value="LATE_ARRIVAL">มาสาย</option>
+                  <option value="RUN_AN_ERRAND">ออกนอกเขตพระราชฐาน</option>
                   <option value="OTHER">อื่นๆ</option>
                 </select>
+              </div>
+
+              {/* ประเภทแบบฟอร์ม: แบบส่ง กบก. / แบบเก็บสถิติ (เลือกได้อย่างเดียว) */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  ประเภทแบบฟอร์ม (ถ้ามี)
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newLeave.formCategory === 'KBK'}
+                      onChange={() =>
+                        setNewLeave({ ...newLeave, formCategory: newLeave.formCategory === 'KBK' ? null : 'KBK' })
+                      }
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-slate-600">แบบส่ง กบก.</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newLeave.formCategory === 'STATS'}
+                      onChange={() =>
+                        setNewLeave({ ...newLeave, formCategory: newLeave.formCategory === 'STATS' ? null : 'STATS' })
+                      }
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-slate-600">แบบเก็บสถิติ</span>
+                  </label>
+                </div>
               </div>
 
               {/* โหมดการลา */}
@@ -1179,40 +1359,70 @@ export default function LeavesPage() {
                 </div>
               )}
 
-              {/* รายชั่วโมง: เลือกจำนวนชม. */}
+              {/* รายชั่วโมง: เวลาออก-เวลากลับ (มาสาย/ออกก่อนเวลา/ออกนอกเขตฯ) หรือเลือกจำนวนชม. (ประเภทอื่น) */}
               {leaveMode === 'hours' && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    จำนวนชั่วโมง
-                  </label>
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map((h) => (
-                      <button
-                        key={h}
-                        type="button"
-                        onClick={() => setLeaveHours(h)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                          leaveHours === h
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        {h} ชม.
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="number"
-                      min={0.5}
-                      max={7}
-                      step={0.5}
-                      value={leaveHours}
-                      onChange={(e) => setLeaveHours(Math.max(0.5, Math.min(7, parseFloat(e.target.value) || 0.5)))}
-                      className="w-24 border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-center"
-                    />
-                    <span className="text-sm text-slate-500">ชั่วโมง (0.5-8 ชม.)</span>
-                  </div>
+                  {TIME_RANGE_TYPES.includes(newLeave.type) ? (
+                    <>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        เวลาออก - เวลากลับ
+                      </label>
+                      <div className="flex items-center gap-3 mb-2">
+                        <input
+                          type="time"
+                          value={leaveTimeOut}
+                          onChange={(e) => setLeaveTimeOut(e.target.value)}
+                          className="border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <span className="text-slate-400">ถึง</span>
+                        <input
+                          type="time"
+                          value={leaveTimeBack}
+                          onChange={(e) => setLeaveTimeBack(e.target.value)}
+                          className="border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                      <span className="text-sm text-slate-500">
+                        {leaveTimeOut && leaveTimeBack
+                          ? `รวม ${timeRangeToHours(leaveTimeOut, leaveTimeBack).toFixed(2)} ชม.`
+                          : 'กรุณาระบุเวลาออกและเวลากลับ'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        จำนวนชั่วโมง
+                      </label>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map((h) => (
+                          <button
+                            key={h}
+                            type="button"
+                            onClick={() => setLeaveHours(h)}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                              leaveHours === h
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {h} ชม.
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          min={0.5}
+                          max={7}
+                          step={0.5}
+                          value={leaveHours}
+                          onChange={(e) => setLeaveHours(Math.max(0.5, Math.min(7, parseFloat(e.target.value) || 0.5)))}
+                          className="w-24 border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-center"
+                        />
+                        <span className="text-sm text-slate-500">ชั่วโมง (0.5-8 ชม.)</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1353,6 +1563,33 @@ export default function LeavesPage() {
                 </div>
               </div>
 
+              {/* กรองด้วยประเภทแบบฟอร์ม */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  ประเภทแบบฟอร์ม (ไม่บังคับ)
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={exportFormCategory === 'KBK'}
+                      onChange={() => setExportFormCategory(exportFormCategory === 'KBK' ? null : 'KBK')}
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-slate-600">เฉพาะแบบส่ง กบก.</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={exportFormCategory === 'STATS'}
+                      onChange={() => setExportFormCategory(exportFormCategory === 'STATS' ? null : 'STATS')}
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-slate-600">เฉพาะแบบเก็บสถิติ</span>
+                  </label>
+                </div>
+              </div>
+
               {/* เลือกคอลัมน์ที่จะ export */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -1371,6 +1608,7 @@ export default function LeavesPage() {
                     { key: 'status', label: 'สถานะ' },
                     { key: 'approvedBy', label: 'ผู้อนุมัติ' },
                     { key: 'createdAt', label: 'วันที่บันทึก' },
+                    { key: 'formCategory', label: 'ประเภทแบบฟอร์ม' },
                   ].map(({ key, label }) => (
                     <label key={key} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1.5 rounded">
                       <input
@@ -1436,16 +1674,8 @@ export default function LeavesPage() {
               <LeaveForm 
                 leave={selectedLeave}
                 holidays={holidays}
-                previousLeave={
-                  leaves
-                    .filter(l => 
-                      l.userId === selectedLeave.userId && 
-                      l.id !== selectedLeave.id &&
-                      new Date(l.createdAt) < new Date(selectedLeave.createdAt)
-                    )
-                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] || null
-                }
-                userLeaves={leaves.filter(l => l.userId === selectedLeave.userId)}
+                previousLeave={previousLeaveForSelected}
+                userLeaves={userLeavesForSelected}
                 onClose={() => {
                   setShowLeaveForm(false);
                   setSelectedLeave(null);

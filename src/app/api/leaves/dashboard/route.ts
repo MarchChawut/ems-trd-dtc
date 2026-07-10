@@ -29,7 +29,6 @@ import { logger } from '@/lib/logger';
  *           totalLeaves: number,
  *           sickDays: number,
  *           personalDays: number,
- *           vacationDays: number,
  *           pending: number,
  *           approved: number,
  *           rejected: number
@@ -64,43 +63,43 @@ export async function GET(request: NextRequest) {
     const startOfYear = new Date(year, 0, 1);
     const endOfYear = new Date(year, 11, 31, 23, 59, 59);
 
-    // ดึงรายชื่อผู้ใช้ทั้งหมดที่ active
-    const users = await prisma.user.findMany({
-      where: {
-        isActive: true,
-        ...(userId ? { id: parseInt(userId) } : {}),
-      },
-      select: {
-        id: true,
-        prefix: true,
-        name: true,
-        avatar: true,
-        department: true,
-      },
-      orderBy: { name: 'asc' },
-    });
-
-    // ดึงข้อมูลการลาทั้งหมดในปีที่ระบุ
-    const leaves = await prisma.leave.findMany({
-      where: {
-        startDate: {
-          gte: startOfYear,
-          lte: endOfYear,
+    // ดึงรายชื่อผู้ใช้ทั้งหมดที่ active + ข้อมูลการลาทั้งหมดในปีที่ระบุ (query อิสระต่อกัน รันพร้อมกันได้)
+    const [users, leaves] = await Promise.all([
+      prisma.user.findMany({
+        where: {
+          isActive: true,
+          ...(userId ? { id: parseInt(userId) } : {}),
         },
-        ...(userId ? { userId: parseInt(userId) } : {}),
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            prefix: true,
-            name: true,
-            avatar: true,
-            department: true,
+        select: {
+          id: true,
+          prefix: true,
+          name: true,
+          avatar: true,
+          department: true,
+        },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.leave.findMany({
+        where: {
+          startDate: {
+            gte: startOfYear,
+            lte: endOfYear,
+          },
+          ...(userId ? { userId: parseInt(userId) } : {}),
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              prefix: true,
+              name: true,
+              avatar: true,
+              department: true,
+            },
           },
         },
-      },
-    });
+      }),
+    ]);
 
     // คำนวณสถิติรายบุคคล
     const userStats = users.map(user => {
@@ -115,7 +114,6 @@ export async function GET(request: NextRequest) {
 
       const sickLeaves = userLeaves.filter(l => l.type === 'SICK');
       const personalLeaves = userLeaves.filter(l => l.type === 'PERSONAL');
-      const vacationLeaves = userLeaves.filter(l => l.type === 'VACATION');
 
       return {
         user,
@@ -123,7 +121,6 @@ export async function GET(request: NextRequest) {
           totalLeaves: userLeaves.length,
           sickDays: sickLeaves.reduce((sum, l) => sum + calculateDays(l), 0),
           personalDays: personalLeaves.reduce((sum, l) => sum + calculateDays(l), 0),
-          vacationDays: vacationLeaves.reduce((sum, l) => sum + calculateDays(l), 0),
           pending: userLeaves.filter(l => l.status === 'PENDING').length,
           approved: userLeaves.filter(l => l.status === 'APPROVED').length,
           rejected: userLeaves.filter(l => l.status === 'REJECTED').length,

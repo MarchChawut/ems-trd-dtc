@@ -46,10 +46,11 @@ interface LeaveFormPDFProps {
 const leaveTypeLabels: Record<LeaveType, { short: string; full: string }> = {
   SICK: { short: "ป่วย", full: "ลาป่วย" },
   PERSONAL: { short: "กิจ", full: "ลากิจ" },
-  VACATION: { short: "พักร้อน", full: "ลาพักร้อน" },
   MATERNITY: { short: "คลอดบุตร", full: "ลาคลอดบุตร" },
   ORDINATION: { short: "บวช", full: "ลาบวช" },
   EARLY_LEAVE: { short: "ออกก่อนเวลา", full: "ออกก่อนเวลา" },
+  LATE_ARRIVAL: { short: "มาสาย", full: "มาสาย" },
+  RUN_AN_ERRAND: { short: "ออกนอกเขต", full: "ออกนอกเขตพระราชฐาน" },
   OTHER: { short: "อื่นๆ", full: "ลาอื่นๆ" },
 };
 

@@ -52,6 +52,25 @@ export function safeGetGregorianYear(date: Date): number {
 }
 
 /**
+ * แปลงสตริงวันที่ (YYYY-MM-DD) เป็น Date ที่ปีเป็น ค.ศ. เสมอ
+ * ป้องกันกรณี input ส่งปี พ.ศ. มาผิดๆ (เช่น native date picker บน locale ไทย)
+ * @param dateStr - วันที่รูปแบบ YYYY-MM-DD
+ * @returns {Date} วันที่ที่ปีถูกแก้เป็น ค.ศ. แล้ว
+ *
+ * ตัวอย่างการใช้งาน:
+ * toSafeGregorianDate('2569-07-07') // Date ปี 2026
+ * toSafeGregorianDate('2026-07-07') // Date ปี 2026 (ไม่เปลี่ยนแปลง)
+ */
+export function toSafeGregorianDate(dateStr: string): Date {
+  const d = new Date(dateStr);
+  const correctedYear = safeGetGregorianYear(d);
+  if (correctedYear !== d.getFullYear()) {
+    d.setFullYear(correctedYear);
+  }
+  return d;
+}
+
+/**
  * ฟังก์ชันสำหรับจัดรูปแบบวันที่
  * @param date - วันที่ที่ต้องการจัดรูปแบบ
  * @param options - ตัวเลือกการจัดรูปแบบ
@@ -70,12 +89,18 @@ export function formatDate(
   }
 ): string {
   const d = new Date(date);
-  
+
   // ตรวจสอบว่าวันที่ถูกต้องหรือไม่
   if (isNaN(d.getTime())) {
     return 'ไม่ระบุ';
   }
-  
+
+  // ป้องกันบวก พ.ศ. ซ้ำ กรณีปีใน DB เป็น พ.ศ. อยู่แล้ว (legacy data)
+  const correctedYear = safeGetGregorianYear(d);
+  if (correctedYear !== d.getFullYear()) {
+    d.setFullYear(correctedYear);
+  }
+
   return d.toLocaleDateString('th-TH', options);
 }
 

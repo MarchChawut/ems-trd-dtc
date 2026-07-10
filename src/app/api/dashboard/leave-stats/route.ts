@@ -82,7 +82,7 @@ function calculateBusinessDays(
  *
  * Query Parameters:
  * - fiscalYear: ปี ค.ศ. ที่เริ่มต้นปีงบประมาณ (เช่น 2025 = ปีงบฯ 2568-2569)
- * - type: ประเภทการลา (SICK, PERSONAL, VACATION, ...)
+ * - type: ประเภทการลา (SICK, PERSONAL, MATERNITY, ...)
  * - startDate: วันเริ่มต้น custom (YYYY-MM-DD)
  * - endDate: วันสิ้นสุด custom (YYYY-MM-DD)
  */
