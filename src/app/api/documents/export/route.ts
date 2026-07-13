@@ -28,6 +28,8 @@ const DOCUMENT_CATEGORY_LABELS: Record<string, string> = {
   MEMO: 'บันทึกข้อความ',
   EXTERNAL_LETTER: 'หนังสือภายนอก',
   PW_NEWS: 'พว.แจ้งข่าว',
+  VEHICLE_SUPPORT_REQUEST: 'ขอรับสนับสนุนยานพาหนะ',
+  REFRESHMENT_SUPPORT_REQUEST: 'ขอรับสนับสนุนอาหารว่าง',
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -173,8 +175,8 @@ export async function GET(request: NextRequest) {
     }
 
     const directionFilter = directionParam === 'RECEIVE' || directionParam === 'SEND' ? directionParam : undefined;
-    const categoryFilter = (['MEMO', 'EXTERNAL_LETTER', 'PW_NEWS'] as const).includes(categoryParam as 'MEMO' | 'EXTERNAL_LETTER' | 'PW_NEWS')
-      ? (categoryParam as 'MEMO' | 'EXTERNAL_LETTER' | 'PW_NEWS')
+    const categoryFilter = (['MEMO', 'EXTERNAL_LETTER', 'PW_NEWS', 'VEHICLE_SUPPORT_REQUEST', 'REFRESHMENT_SUPPORT_REQUEST'] as const).includes(categoryParam as 'MEMO' | 'EXTERNAL_LETTER' | 'PW_NEWS' | 'VEHICLE_SUPPORT_REQUEST' | 'REFRESHMENT_SUPPORT_REQUEST')
+      ? (categoryParam as 'MEMO' | 'EXTERNAL_LETTER' | 'PW_NEWS' | 'VEHICLE_SUPPORT_REQUEST' | 'REFRESHMENT_SUPPORT_REQUEST')
       : undefined;
     const dateRange = getPeriodRange(period, startDate, endDate);
 
@@ -243,11 +245,15 @@ export async function GET(request: NextRequest) {
         MEMO: 'FFFEF3C7',
         EXTERNAL_LETTER: 'FFEDE9FE',
         PW_NEWS: 'FFCFFAFE',
+        VEHICLE_SUPPORT_REQUEST: 'FFFFE4E6',
+        REFRESHMENT_SUPPORT_REQUEST: 'FFECFCCB',
       };
       const categoryFontColor: Record<string, string> = {
         MEMO: 'FF92400E',
         EXTERNAL_LETTER: 'FF5B21B6',
         PW_NEWS: 'FF155E75',
+        VEHICLE_SUPPORT_REQUEST: 'FF9F1239',
+        REFRESHMENT_SUPPORT_REQUEST: 'FF3F6212',
       };
 
       documents.forEach((d, i) => {

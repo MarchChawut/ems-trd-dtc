@@ -18,6 +18,8 @@ const DOCUMENT_CATEGORY_CONFIG: Record<DocumentCategory, { label: string; bg: st
   MEMO: { label: 'บันทึกข้อความ', bg: 'bg-amber-100', text: 'text-amber-700' },
   EXTERNAL_LETTER: { label: 'หนังสือภายนอก', bg: 'bg-violet-100', text: 'text-violet-700' },
   PW_NEWS: { label: 'พว.แจ้งข่าว', bg: 'bg-cyan-100', text: 'text-cyan-700' },
+  VEHICLE_SUPPORT_REQUEST: { label: 'ขอรับสนับสนุนยานพาหนะ', bg: 'bg-rose-100', text: 'text-rose-700' },
+  REFRESHMENT_SUPPORT_REQUEST: { label: 'ขอรับสนับสนุนอาหารว่าง', bg: 'bg-lime-100', text: 'text-lime-700' },
 };
 
 const OTHER_SENTINEL = '__OTHER__';

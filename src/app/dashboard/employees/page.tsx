@@ -362,7 +362,7 @@ export default function EmployeesPage() {
     setEditForm({
       prefix: user.prefix || '',
       name: user.name,
-      email: user.email,
+      email: user.email || '',
       role: user.role,
       department: user.department || '',
       division: user.division || '',
@@ -392,7 +392,7 @@ export default function EmployeesPage() {
         body: JSON.stringify({
           prefix: editForm.prefix || null,
           name: editForm.name,
-          email: editForm.email,
+          email: editForm.email.trim() || null,
           role: editForm.role,
           department: editForm.department || null,
           division: editForm.division || null,
@@ -551,7 +551,7 @@ export default function EmployeesPage() {
    */
   const filteredUsers = useMemo(() => users.filter(user =>
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (user.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.department?.toLowerCase().includes(searchQuery.toLowerCase())
   ), [users, searchQuery]);
 
@@ -1219,7 +1219,7 @@ export default function EmployeesPage() {
                   </select>
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">แผนก/กอง</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">แผนก</label>
                   <select
                     className="w-full border border-slate-300 rounded-lg p-2.5 outline-none"
                     value={editForm.department}
@@ -1230,6 +1230,12 @@ export default function EmployeesPage() {
                       <option key={dept.id} value={dept.name}>{dept.name}</option>
                     ))}
                   </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">กอง</label>
+                  <div className="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50 text-slate-500">
+                    กองการศึกษา วิจัย และพัฒนา
+                  </div>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">สังกัด</label>

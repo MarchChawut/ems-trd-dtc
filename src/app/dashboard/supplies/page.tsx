@@ -40,10 +40,10 @@ function fmtPrice(n: number | null | undefined) {
 
 function qtyColor(current: number, min: number, redPct = 20, yellowPct = 50): string {
   if (min <= 0) return 'text-slate-700 bg-slate-50 border-slate-200';
+  if (current > min) return 'text-emerald-600 bg-emerald-50 border-emerald-200';
   const ratio = (current / min) * 100;
   if (ratio < redPct) return 'text-red-600 bg-red-50 border-red-200';
-  if (ratio <= yellowPct) return 'text-amber-600 bg-amber-50 border-amber-200';
-  return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+  return 'text-amber-600 bg-amber-50 border-amber-200';
 }
 
 // ============================================
@@ -68,6 +68,7 @@ export default function SuppliesPage() {
   const [members, setMembers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SupplyType>('STOCK');
+  const [isLowStockExpanded, setIsLowStockExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -646,7 +647,8 @@ export default function SuppliesPage() {
     );
   }
 
-  const lowStockCount = supplies.filter(s => s.type === 'STOCK' && s.currentQuantity <= s.minimumQuantity).length;
+  const lowStockItems = supplies.filter(s => s.type === 'STOCK' && s.currentQuantity <= s.minimumQuantity);
+  const lowStockCount = lowStockItems.length;
 
   return (
     <div className="space-y-6">
@@ -677,9 +679,28 @@ export default function SuppliesPage() {
 
       {/* Low stock alert */}
       {lowStockCount > 0 && activeTab === 'STOCK' && (
-        <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-          <AlertTriangle size={18} className="text-amber-600 shrink-0" />
-          <p className="text-sm text-amber-700">มี <strong>{lowStockCount}</strong> รายการที่มีจำนวนต่ำกว่าขั้นต่ำ</p>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setIsLowStockExpanded(v => !v)}
+            className="w-full flex items-center gap-3 p-3 text-left"
+          >
+            <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+            <p className="text-sm text-amber-700 flex-1">มี <strong>{lowStockCount}</strong> รายการที่มีจำนวนต่ำกว่าขั้นต่ำ</p>
+            <ChevronDown size={16} className={cn('text-amber-600 transition-transform shrink-0', isLowStockExpanded && 'rotate-180')} />
+          </button>
+          {isLowStockExpanded && (
+            <div className="border-t border-amber-200 divide-y divide-amber-100 bg-white/50">
+              {lowStockItems.map(s => (
+                <div key={s.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                  <span className="text-slate-700">{s.name}</span>
+                  <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-semibold border', qtyColor(s.currentQuantity, s.minimumQuantity, s.thresholdRed, s.thresholdYellow))}>
+                    {s.currentQuantity} / {s.minimumQuantity} {s.unit || ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

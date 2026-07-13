@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 // Schema สำหรับอัปเดตผู้ใช้
 const updateUserSchema = z.object({
-  email: z.string().email('รูปแบบอีเมลไม่ถูกต้อง').optional(),
+  email: z.union([z.string().email('รูปแบบอีเมลไม่ถูกต้อง'), z.literal('')]).optional(),
   prefix: z.string().max(50).nullable().optional(),
   name: z.string().min(1, 'กรุณาระบุชื่อ').max(100).optional(),
   role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'HR']).optional(),
@@ -245,7 +245,7 @@ export async function PATCH(
     const updateData: any = {};
 
     if (email !== undefined) {
-      updateData.email = email;
+      updateData.email = email || null;
     }
 
     if (name !== undefined) {

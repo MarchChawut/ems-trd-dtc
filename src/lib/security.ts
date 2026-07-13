@@ -245,7 +245,7 @@ export const createDocumentRegisterSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'กรุณาระบุวันที่ให้ถูกต้อง'),
   subject: z.string().min(1, 'กรุณาระบุเรื่อง').max(500, 'เรื่องต้องไม่เกิน 500 ตัวอักษร'),
   direction: z.enum(['RECEIVE', 'SEND']),
-  category: z.enum(['MEMO', 'EXTERNAL_LETTER', 'PW_NEWS']),
+  category: z.enum(['MEMO', 'EXTERNAL_LETTER', 'PW_NEWS', 'VEHICLE_SUPPORT_REQUEST', 'REFRESHMENT_SUPPORT_REQUEST']),
   documentNumber: z.string().max(100).optional().nullable(),
   recipientName: z.string().max(200).optional().nullable(),
   senderName: z.string().max(200).optional().nullable(),

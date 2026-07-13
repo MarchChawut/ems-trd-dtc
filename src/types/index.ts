@@ -20,7 +20,7 @@ export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'EMPLOYEE' | 'HR';
  */
 export interface User {
   id: number;
-  email: string;
+  email: string | null;
   username: string;
   prefix: string | null; // คำนำหน้า เช่น นาย, น.ส., ร.ต.
   name: string;
@@ -80,7 +80,7 @@ export interface PositionSecond {
  */
 export interface SessionUser {
   id: number;
-  email: string;
+  email: string | null;
   username: string;
   name: string;
   role: UserRole;
@@ -107,7 +107,7 @@ export interface CreateUserInput {
  * ข้อมูลสำหรับอัปเดตผู้ใช้
  */
 export interface UpdateUserInput {
-  email?: string;
+  email?: string | null;
   prefix?: string | null;
   name?: string;
   role?: UserRole;
@@ -635,7 +635,7 @@ export interface CreateCheckoutInput {
 // ============================================
 
 export type DocumentDirection = 'RECEIVE' | 'SEND';
-export type DocumentCategory = 'MEMO' | 'EXTERNAL_LETTER' | 'PW_NEWS';
+export type DocumentCategory = 'MEMO' | 'EXTERNAL_LETTER' | 'PW_NEWS' | 'VEHICLE_SUPPORT_REQUEST' | 'REFRESHMENT_SUPPORT_REQUEST';
 
 export interface DocumentRegister {
   id: number;
