@@ -34,6 +34,7 @@ import {
 import { cn, safeGetGregorianYear } from '@/lib/utils';
 import { Leave, LeaveType, LeaveStatus, LeaveFormCategory, User, Holiday } from '@/types';
 import LeaveForm from '@/components/leaves/LeaveForm';
+import LateArrivalForm from '@/components/leaves/LateArrivalForm';
 
 /**
  * สีและข้อความของประเภทการลา
@@ -1659,7 +1660,11 @@ export default function LeavesPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50 sticky top-0">
-              <h3 className="font-bold text-slate-800">แบบใบลาป่วย ลาคลอดบุตร ลากิจ</h3>
+              <h3 className="font-bold text-slate-800">
+                {selectedLeave.type === 'LATE_ARRIVAL'
+                  ? 'แบบขอลงเวลามาปฏิบัติราชการหลังเวลา 08.30 น.'
+                  : 'แบบใบลาป่วย ลาคลอดบุตร ลากิจ'}
+              </h3>
               <button
                 onClick={() => {
                   setShowLeaveForm(false);
@@ -1671,16 +1676,27 @@ export default function LeavesPage() {
               </button>
             </div>
             <div className="p-4">
-              <LeaveForm 
-                leave={selectedLeave}
-                holidays={holidays}
-                previousLeave={previousLeaveForSelected}
-                userLeaves={userLeavesForSelected}
-                onClose={() => {
-                  setShowLeaveForm(false);
-                  setSelectedLeave(null);
-                }}
-              />
+              {selectedLeave.type === 'LATE_ARRIVAL' ? (
+                <LateArrivalForm
+                  leave={selectedLeave}
+                  userLeaves={userLeavesForSelected}
+                  onClose={() => {
+                    setShowLeaveForm(false);
+                    setSelectedLeave(null);
+                  }}
+                />
+              ) : (
+                <LeaveForm
+                  leave={selectedLeave}
+                  holidays={holidays}
+                  previousLeave={previousLeaveForSelected}
+                  userLeaves={userLeavesForSelected}
+                  onClose={() => {
+                    setShowLeaveForm(false);
+                    setSelectedLeave(null);
+                  }}
+                />
+              )}
             </div>
           </div>
         </div>

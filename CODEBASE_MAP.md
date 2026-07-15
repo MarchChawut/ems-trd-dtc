@@ -1,6 +1,6 @@
 # CODEBASE MAP — EMS Admin (ems-trd-dtc)
 
-> Generated: 2026-06-06 · Last updated: 2026-06-30 (passkey + 2FA)  
+> Generated: 2026-06-06 · Last updated: 2026-07-15 (document register, LINE reminders, dashboard widget refactor, late-arrival leave form, DB-backed file storage)
 > Purpose: Context reference for feature development
 
 ---
@@ -12,11 +12,12 @@
 Core modules:
 - **Authentication** — custom session-based auth with DB-backed brute-force protection, **mandatory 2FA (TOTP)** on password login, and **passkey (WebAuthn) login** as an alternative
 - **Employees** — CRUD, profile images, import from CSV
-- **Leaves** — Thai-gov–style leave requests, PDF generation, fiscal-year statistics
-- **Kanban Tasks** — draggable column board with assignees and reminders
+- **Leaves** — Thai-gov–style leave requests (incl. a dedicated late-arrival form), PDF generation, fiscal-year statistics
+- **Kanban Tasks** — draggable column board with assignees and **LINE group reminders**
 - **Supplies (พัสดุ)** — STOCK/NON_STOCK inventory, transaction history (receive/return/adjust), Excel export
 - **Assets (ครุภัณฑ์)** — asset registry, checkout/return tracking, inspection records, Excel export
-- **Dashboard** — leave statistics with charts (Recharts), per-user summaries
+- **Document Register (ทะเบียนรับ-ส่งหนังสือ)** — incoming/outgoing document log with category tagging and Excel export
+- **Dashboard** — leave statistics with charts (Recharts), plus widgets for pending approvals, recent tasks, low-stock supplies, and asset status/overdue checkouts
 
 ---
 
@@ -30,14 +31,15 @@ Core modules:
 | Icons | lucide-react |
 | Charts | Recharts 3 |
 | PDF | @react-pdf/renderer 4 |
-| Excel | ExcelJS 4 (supplies export), xlsx 0.18 (assets export) |
+| Excel | ExcelJS 4 (supplies/documents export), xlsx 0.18 (assets export) |
 | ORM | Prisma 5 |
 | Database | MariaDB 10.11 (Docker on Synology NAS) |
 | Validation | Zod 3 |
 | Auth | Custom session tokens (bcryptjs + HttpOnly cookie) |
 | 2FA | TOTP via `otplib` 13 + QR via `qrcode`; secret encrypted at rest (AES-256-GCM) |
 | Passkey | WebAuthn via `@simplewebauthn/server` + `@simplewebauthn/browser` 13 |
-| File Upload | Magic-byte MIME detection via `file-type` |
+| File Storage | Files stored as bytes in MariaDB (`UploadedFile`), served via `/api/files/[id]`; magic-byte MIME detection via `file-type` |
+| Notifications | LINE Messaging API (group push) for task reminders |
 | Build | pnpm, tsx (seed/scripts), Turbopack (dev) |
 
 ---
@@ -46,7 +48,7 @@ Core modules:
 
 ```
 ems-trd-dtc/
-├── .env                          # DATABASE_URL, RP_ID/RP_NAME/WEBAUTHN_ORIGIN, TWO_FACTOR_ENC_KEY, etc.
+├── .env                          # DATABASE_URL, RP_ID/RP_NAME/WEBAUTHN_ORIGIN, TWO_FACTOR_ENC_KEY, LINE_*, CRON_SECRET, etc.
 ├── .gitignore                    # Excludes .claude/, backups/, .env, node_modules, etc.
 ├── next.config.js                # Security headers (HSTS, CSP, etc.), canvas alias
 ├── tailwind.config.ts
@@ -54,19 +56,22 @@ ems-trd-dtc/
 ├── tsconfig.seed.json
 ├── docker-compose.yml            # MariaDB 10.11 + phpMyAdmin (optional profile)
 ├── empty-module.js               # Canvas alias for @react-pdf/renderer
-├── package.json
+├── package.json                  # postinstall: prisma generate
 │
 ├── prisma/
 │   ├── schema.prisma             # All DB models + enums (see §5)
 │   ├── seed.ts
-│   └── migrations/               # Historical migrations (pre-supplies/assets)
+│   └── migrations/               # Historical migrations
 │
 ├── scripts/
-│   └── backup.ts                 # DB backup utility
+│   ├── backup.ts                 # DB backup utility
+│   ├── import-assets.ts          # Bulk-import assets from spreadsheet/CSV
+│   ├── migrate-uploads-to-db.ts  # One-off: move disk-stored uploads into UploadedFile table
+│   ├── fix-leave-buddhist-years.ts     # Data-repair: normalize Buddhist-year leave dates
+│   └── fix-html-entity-escaped-text.ts # Data-repair: un-escape HTML entities in stored text
 │
 ├── public/
-│   └── uploads/
-│       └── documents/            # Uploaded PDFs and images (gitignored)
+│   └── uploads/                  # Legacy/local upload dirs (superseded by DB-backed UploadedFile + /api/files/[id])
 │
 └── src/
     ├── proxy.ts                  # HTTPS redirect, CORS helper
@@ -81,13 +86,27 @@ ems-trd-dtc/
     │   ├── twofactor.ts          # TOTP (otplib), backup codes, 2fa_pending challenge helpers
     │   ├── webauthn.ts           # Passkey RP config, base64url helpers, WebAuthn challenge store
     │   ├── rate-limit-db.ts      # DB-backed rate limiter (DatabaseRateLimiter)
+    │   ├── line.ts                # LINE Messaging API — sendLineGroupMessage, replyLineMessage
     │   ├── logger.ts             # Structured logger (dev: pretty, prod: JSON; serializes Error message/stack)
     │   └── utils.ts              # cn(), formatDate, toBuddhistYear, etc.
     │
     ├── components/
+    │   ├── dashboard/
+    │   │   ├── types.ts                  # LeaveRecord, UserSummary, LeaveStatsData (dashboard-local types)
+    │   │   ├── leaveTypeConfig.ts        # Colors/labels per LeaveType for charts & tables
+    │   │   ├── StatCard.tsx              # Generic stat tile
+    │   │   ├── LeaveFilterPanel.tsx      # Month/fiscal-year/type/date-range filters
+    │   │   ├── LeaveChart.tsx            # Recharts leave breakdown
+    │   │   ├── LeavePersonTable.tsx      # Per-user leave summary table
+    │   │   ├── PendingApprovalsList.tsx  # Recent pending leave requests widget
+    │   │   ├── RecentTasksList.tsx       # Recent kanban tasks widget
+    │   │   ├── LowStockSuppliesWidget.tsx # Supplies at/under minimum quantity
+    │   │   └── AssetStatusWidget.tsx     # In-use/in-repair counts + overdue checkouts
     │   └── leaves/
-    │       ├── LeaveForm.tsx
+    │       ├── LeaveForm.tsx             # Sick/maternity/personal/etc. leave form + print
     │       ├── LeaveFormPDF.tsx
+    │       ├── LateArrivalForm.tsx       # Dedicated form for LATE_ARRIVAL (มาสาย) type
+    │       ├── LateArrivalFormPDF.tsx    # @react-pdf/renderer doc for late-arrival form
     │       └── pdf-fonts.ts
     │
     └── app/
@@ -96,13 +115,14 @@ ems-trd-dtc/
         ├── page.tsx              # Login page (/)
         │
         ├── dashboard/
-        │   ├── layout.tsx        # Sidebar + Header shell (nav includes ตั้งค่า)
-        │   ├── page.tsx          # Dashboard — leave stats + summary
+        │   ├── layout.tsx        # Sidebar + Header shell (nav includes เอกสาร, ตั้งค่า)
+        │   ├── page.tsx          # Dashboard — composes widgets from components/dashboard/
         │   ├── employees/page.tsx
         │   ├── leaves/page.tsx
         │   ├── tasks/page.tsx    # Kanban board
         │   ├── supplies/page.tsx # พัสดุ — inventory, transactions, export
         │   ├── assets/page.tsx   # ครุภัณฑ์ — registry, checkout, inspection, export
+        │   ├── documents/page.tsx # ทะเบียนรับ-ส่งหนังสือ — document register CRUD + export
         │   └── settings/page.tsx # ตั้งค่า — manage passkeys + 2FA status/backup codes
         │
         └── api/
@@ -144,7 +164,7 @@ ems-trd-dtc/
             │   ├── [id]/route.ts
             │   └── reorder/route.ts
             ├── dashboard/
-            │   ├── route.ts
+            │   ├── route.ts               # Aggregate stats + widget payloads (leaves, tasks, supplies, assets)
             │   └── leave-stats/route.ts
             ├── supplies/
             │   ├── route.ts           # GET list / POST create
@@ -161,8 +181,18 @@ ems-trd-dtc/
             ├── asset-checkouts/
             │   ├── route.ts           # GET list / POST checkout
             │   └── [id]/route.ts      # PATCH return
+            ├── documents/
+            │   ├── route.ts           # GET list / POST create (admin only)
+            │   ├── [id]/route.ts      # GET / PATCH / DELETE (admin only)
+            │   └── export/route.ts    # GET — Excel export of document register
             ├── uploads/
-            │   └── document/route.ts  # POST — file upload (magic-byte MIME check)
+            │   └── document/route.ts  # POST — file upload (magic-byte MIME check) → stored in UploadedFile
+            ├── files/
+            │   └── [id]/route.ts      # GET — serve UploadedFile bytes (requires auth)
+            ├── line/
+            │   └── webhook/route.ts   # POST — LINE webhook (signature-verified); used to discover Group ID
+            ├── cron/
+            │   └── reminders/route.ts # GET — external cron hits this to push due task reminders to LINE (x-cron-secret)
             ├── departments/route.ts
             ├── positions/route.ts
             ├── position-seconds/route.ts
@@ -179,12 +209,14 @@ ems-trd-dtc/
 ┌─────────────────────────────────────────────────────────┐
 │                   Browser / Client                       │
 │  page.tsx (login) → dashboard/layout.tsx                 │
-│      ├── dashboard/page.tsx                              │
+│      ├── dashboard/page.tsx  ──► components/dashboard/*  │
 │      ├── employees/page.tsx                              │
-│      ├── leaves/page.tsx ──► LeaveForm.tsx               │
+│      ├── leaves/page.tsx ──► LeaveForm.tsx /              │
+│      │                       LateArrivalForm.tsx          │
 │      ├── tasks/page.tsx                                  │
 │      ├── supplies/page.tsx   (inventory + transactions)  │
-│      └── assets/page.tsx     (registry + checkout)       │
+│      ├── assets/page.tsx     (registry + checkout)       │
+│      └── documents/page.tsx  (document register)         │
 └──────────────────┬──────────────────────────────────────┘
                    │ fetch()
                    ▼
@@ -196,7 +228,9 @@ ems-trd-dtc/
 │  /api/supplies/* /api/supply-categories                  │
 │  /api/supply-transactions                                │
 │  /api/assets/*  /api/asset-categories                    │
-│  /api/asset-checkouts/*  /api/uploads/document           │
+│  /api/asset-checkouts/*  /api/uploads/document            │
+│  /api/documents/*  /api/files/[id]                        │
+│  /api/line/webhook  /api/cron/reminders                  │
 │  /api/departments  /api/positions  /api/holidays         │
 │  /api/leave-rules  /api/health                           │
 │                                                          │
@@ -204,6 +238,7 @@ ems-trd-dtc/
 │    lib/auth.ts ───────────────────────────────────┐      │
 │    lib/security.ts (Zod schemas, sanitize) ───────┤      │
 │    lib/rate-limit-db.ts (login + 2fa verify) ─────┤      │
+│    lib/line.ts (task/cron reminders only) ────────┤      │
 │    lib/logger.ts ─────────────────────────────────┤      │
 │    lib/utils.ts (helpers) ────────────────────────┘      │
 └──────────────────┬───────────────────────────────────────┘
@@ -217,13 +252,14 @@ ems-trd-dtc/
 │    tables: users, sessions, login_attempts,               │
 │            authenticators, webauthn_challenges,           │
 │            two_factor_backup_codes, two_factor_challenges, │
-│            tasks, kanban_columns,                         │
-│            leaves, leave_rules,                           │
-│            departments, positions, position_seconds,      │
-│            holidays,                                      │
-│            supply_categories, supplies,                   │
-│            supply_transactions,                           │
-│            asset_categories, assets, asset_checkouts      │
+│            tasks, kanban_columns,                          │
+│            leaves, leave_rules,                            │
+│            departments, positions, position_seconds,       │
+│            holidays,                                       │
+│            supply_categories, supplies,                    │
+│            supply_transactions,                            │
+│            asset_categories, assets, asset_checkouts,      │
+│            uploaded_files, document_registers              │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -237,18 +273,23 @@ ems-trd-dtc/
 |---|---|
 | **Role** | SUPER_ADMIN, ADMIN, MANAGER, HR, EMPLOYEE |
 | **Priority** | LOW, MEDIUM, HIGH, URGENT |
-| **LeaveType** | SICK, PERSONAL, VACATION, MATERNITY, ORDINATION, EARLY_LEAVE, OTHER |
+| **LeaveType** | SICK, PERSONAL, MATERNITY, ORDINATION, EARLY_LEAVE, LATE_ARRIVAL, RUN_AN_ERRAND, OTHER |
 | **LeaveStatus** | PENDING, APPROVED, REJECTED |
+| **LeaveFormCategory** | KBK (แบบส่ง กบก.), STATS (แบบเก็บสถิติ) — mutually exclusive form-routing tag on a `Leave` |
 | **SupplyType** | STOCK, NON_STOCK |
 | **TransactionType** | RECEIVE, ISSUE, RETURN, ADJUST |
 | **AssetStatus** | AVAILABLE, IN_USE, IN_REPAIR, RETURNED, DISPOSED |
 | **AssetCondition** | EXCELLENT, GOOD, FAIR, POOR, DAMAGED |
+| **DocumentDirection** | RECEIVE (หนังสือเข้า), SEND (หนังสือออก) |
+| **DocumentCategory** | MEMO, EXTERNAL_LETTER, PW_NEWS, VEHICLE_SUPPORT_REQUEST, REFRESHMENT_SUPPORT_REQUEST |
+
+> Note: `VACATION` was removed from `LeaveType`; `LATE_ARRIVAL` and `RUN_AN_ERRAND` were added, with dedicated `outTime`/`backTime` fields on `Leave` and a separate `LateArrivalForm` UI/PDF.
 
 ### Models
 
 | Model | Key Fields | Relations |
 |---|---|---|
-| **User** | id, email, username, password, prefix, name, role, department, division, position, positionSecond, positionLevel, phone, birthday, address, avatar, profileImage, isActive, **twoFactorEnabled**, **twoFactorSecret** (encrypted) | → tasks, leaves, sessions, loginAttempts, **authenticators**, **backupCodes**, supplyTransactions, checkoutsHeld, checkoutsIssued, assetsHeld |
+| **User** | id, email (optional, unique), username, password, prefix, name, role, department, division, position, positionSecond, positionLevel, phone, birthday, address, avatar, profileImage, isActive, **twoFactorEnabled**, **twoFactorSecret** (encrypted) | → tasks, leaves, sessions, loginAttempts, **authenticators**, **backupCodes**, supplyTransactions, checkoutsHeld, checkoutsIssued, assetsHeld, **documentsRecorded** |
 | **Session** | id, userId, token (unique), expiresAt, ipAddress, userAgent, isValid | → User |
 | **LoginAttempt** | id, userId?, username, ipAddress, success, reason | → User? |
 | **Authenticator** *(passkey)* | id, credentialId (unique), publicKey (base64url), counter, transports, deviceType, backedUp, name, userId, lastUsedAt | → User |
@@ -256,8 +297,8 @@ ems-trd-dtc/
 | **TwoFactorBackupCode** | id, userId, codeHash (bcrypt), usedAt? | → User |
 | **TwoFactorChallenge** | id (cuid), userId, pendingSecret? (encrypted), attempts, expiresAt | — (temp, `2fa_pending` cookie) |
 | **KanbanColumn** | id, name, color, order, isDefault | → tasks |
-| **Task** | id, title, description, columnId, priority, assigneeId, reminderAt, archivedAt | → KanbanColumn, User? |
-| **Leave** | id, userId, type, startDate, endDate, reason, status, approvedBy, approvedAt, isHalfDay, hours, totalDays, contactAddress | → User |
+| **Task** | id, title, description, columnId, priority, assigneeId, reminderAt, **reminderSentAt**, archivedAt | → KanbanColumn, User? |
+| **Leave** | id, userId, type, startDate, endDate, reason, status, approvedBy, approvedAt, isHalfDay, hours, **outTime**, **backTime**, **formCategory**, totalDays, contactAddress | → User |
 | **LeaveRule** | id, name, startTime, endTime, fullDayHours, halfDayHours, maxConsecutiveDays, isActive | — |
 | **Department** | id, name, description, isActive, order | — |
 | **Position** | id, name, description, isActive, order | — |
@@ -269,6 +310,8 @@ ems-trd-dtc/
 | **AssetCategory** | id, name, description, isActive, order | → assets |
 | **Asset** | id, name, assetTag (unique), serialNumber, model, brand, categoryId, status, condition, currentHolderId, acquisitionDate, acquisitionCost, documentNumber, documentUrl, location, department, imageUrl, notes, isActive, receiverName, lastInspectionDate, lastInspectionCondition, lastInspectedBy | → category, currentHolder, checkouts |
 | **AssetCheckout** | id, assetId, holderId, issuedById, checkedOutAt, returnedAt, expectedReturnAt, notes | → asset, holder, issuedBy |
+| **UploadedFile** *(added 2026-07)* | id (cuid), data (Bytes/LONGBLOB), mimeType, fileName, size, uploadedById?, createdAt | — (served via `/api/files/[id]`) |
+| **DocumentRegister** *(added 2026-07)* | id, date, subject, direction, category?, documentNumber?, recipientName?, senderName?, remarks?, isActive, recordedById | → recordedBy (User) |
 
 ---
 
@@ -281,7 +324,7 @@ ems-trd-dtc/
 `TaskPriority`, `KanbanColumn`, `Task`, `CreateTaskInput`, `UpdateTaskInput`
 
 ### Leaves
-`LeaveType`, `LeaveStatus`, `Leave`, `CreateLeaveInput`, `UpdateLeaveInput`
+`LeaveType`, `LeaveStatus`, `LeaveFormCategory`, `Leave`, `CreateLeaveInput`, `UpdateLeaveInput`
 
 ### Supplies *(added 2026-06)*
 `SupplyType`, `TransactionType`, `SupplyCategory`, `Supply`, `SupplyTransaction`, `CreateSupplyInput`, `CreateTransactionInput`
@@ -289,8 +332,14 @@ ems-trd-dtc/
 ### Assets *(added 2026-06)*
 `AssetStatus`, `AssetCondition`, `AssetCategory`, `Asset`, `AssetCheckout`, `CreateAssetInput`, `CreateCheckoutInput`
 
+### Documents *(added 2026-07)*
+`DocumentDirection`, `DocumentCategory`, `DocumentRegister`, `CreateDocumentRegisterInput`
+
+### Dashboard widgets *(added 2026-07)*
+`LowStockSupplySummary`, `OverdueCheckoutSummary`, `RecentPendingLeaveSummary`, `RecentTaskSummary` — trimmed shapes returned by `/api/dashboard` for the widget components in `src/components/dashboard/`
+
 ### API & UI Utilities
-`ApiResponse<T>`, `ApiError`, `DashboardStats`, `RecentActivity`, `ChildrenProps`, `ModalProps`, `FormStatus`, `FormErrors`, `FormState<T>`
+`ApiResponse<T>`, `ApiError`, `DashboardStats` (now also carries `lowStockCount`, `assetsInUse`, `assetsInRepair`, `overdueCheckoutsCount`), `RecentActivity`, `ChildrenProps`, `ModalProps`, `FormStatus`, `FormErrors`, `FormState<T>`
 
 ---
 
@@ -300,7 +349,7 @@ ems-trd-dtc/
 |---|---|
 | `loginSchema` | username (alphanum+_, 3-100), password (8-128) |
 | `passkeyLoginSchema` | username only (start passkey login) |
-| `createUserSchema` | email, username, password (upper+lower+digit), prefix, name, role, department |
+| `createUserSchema` | email (optional), username, password (upper+lower+digit), prefix, name, role, department |
 | `createTaskSchema` | title (1-255), description (max 1000), priority enum, columnId, assigneeId |
 | `createLeaveSchema` | type enum, startDate/endDate (YYYY-MM-DD), reason (1-500), isHalfDay, hours, contactAddress; endDate ≥ startDate |
 | `createSupplyCategorySchema` | name (1-100), description (max 255), order int |
@@ -309,12 +358,14 @@ ems-trd-dtc/
 | `createAssetCategorySchema` | name (1-100), description, order |
 | `createAssetSchema` | name, assetTag, serialNumber, model, brand, categoryId, status/condition enums, acquisitionDate (YYYY-MM-DD), documentNumber, location, department, imageUrl, notes, receiverName, lastInspectionDate, lastInspectionCondition, lastInspectedBy |
 | `createCheckoutSchema` | assetId, holderId, issuedById (optional override), expectedReturnAt, notes |
+| `createDocumentRegisterSchema` | date (YYYY-MM-DD), subject (1-500), direction enum, category enum (optional), documentNumber, recipientName, senderName, remarks |
 
 **Security utilities:** `hashPassword`, `verifyPassword`, `sanitizeInput`, `generateSecureToken` (uses `crypto.randomBytes`), `generateAvatarInitials`
 
 **2FA helpers (`src/lib/twofactor.ts`):** `generateTotpSecret`, `buildOtpAuthUri`, `verifyTotp` (otplib), `generateBackupCodes`/`findMatchingBackupCode`/`normalizeBackupCode`, `createPendingChallenge`/`getPendingChallenge`/`bumpChallengeAttempts`/`finishChallenge` (uses `2fa_pending` cookie)
 **Crypto (`src/lib/crypto.ts`):** `encrypt`/`decrypt` — AES-256-GCM, key from `TWO_FACTOR_ENC_KEY` (base64 32 bytes)
 **Passkey helpers (`src/lib/webauthn.ts`):** `getRpConfig`, `toBase64url`/`fromBase64url`, `parseTransports`/`serializeTransports`, `storeChallenge`/`consumeChallenge`
+**LINE helpers (`src/lib/line.ts`):** `sendLineGroupMessage(text)` — group push for task reminders; `replyLineMessage` — used by the webhook to echo the Group ID during setup
 **Session (`src/lib/auth.ts`):** `createSession(userId, request)` — shared by password/2FA/passkey login
 
 ---
@@ -345,6 +396,9 @@ Input validation: Zod schemas (security.ts) on all write endpoints
 File uploads: magic-byte MIME detection via `file-type` package
   – rejects spoofed MIME types regardless of Content-Type header
   – allowed: PDF (10 MB), JPEG/PNG/WebP (5 MB)
+  – bytes persisted to `uploaded_files` table (not disk) — served back via
+    GET /api/files/[id] (requires auth); keeps files visible across all
+    NAS-connected instances instead of being pinned to one machine's disk
 
 XSS: sanitizeInput() — HTML entity encoding
 SQL injection: parameterized queries via Prisma — no raw SQL
@@ -364,6 +418,13 @@ Passkey (WebAuthn) — alternative login, EXEMPT from 2FA (already strong MFA):
   – register while authenticated (settings); login by username → assertion → session
   – Authenticator stores credentialId + publicKey + counter; counter checked to prevent replay
   – RP config from env (RP_ID/RP_NAME/WEBAUTHN_ORIGIN); RP_ID must be a domain, not a bare IP
+
+LINE webhook (/api/line/webhook): HMAC-SHA256 signature check against
+  LINE_CHANNEL_SECRET using crypto.timingSafeEqual — rejects unsigned/forged events
+
+Cron endpoint (/api/cron/reminders): shared-secret check (x-cron-secret header
+  vs CRON_SECRET) using crypto.timingSafeEqual — not session-authenticated,
+  intended to be called by Synology Task Scheduler / host cron
 ```
 
 ---
@@ -377,6 +438,7 @@ Passkey (WebAuthn) — alternative login, EXEMPT from 2FA (already strong MFA):
 | Approve leaves | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Manage users | ✗ | ✗ | ✗ | ✓ | ✓ |
 | Manage supplies & assets | ✗ | ✗ | ✓ | ✓ | ✓ |
+| Manage document register | ✗ | ✗ | ✗ | ✓ | ✓ |
 | Export reports | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Edit org fields (position/dept) | ✗ | ✗ | ✗ | ✓ | ✓ |
 
@@ -430,6 +492,37 @@ Helper functions in `lib/auth.ts`:
 [DB] assetCheckout.returnedAt = now; asset.status = AVAILABLE
 ```
 
+### Document Register Flow
+```
+[Documents Page]
+  │ POST /api/documents {date, subject, direction, category?, ...}
+  ▼
+[API] requireAuth → isAdmin → createDocumentRegisterSchema.safeParse
+  │ documentRegister.create({recordedById: authUser.id})
+  ▼
+[DB] document_registers row created
+  │
+  │ GET /api/documents/export?direction=&category=&period=
+  ▼
+[API] ExcelJS workbook of the filtered register (หนังสือเข้า/ออก)
+```
+
+### Task Reminder Flow (LINE)
+```
+[Task created/edited with reminderAt]
+  ▼
+[External scheduler] GET /api/cron/reminders  (x-cron-secret header, ~every 1 min)
+  ▼
+[API] isAuthorized (timing-safe secret compare)
+  │ task.findMany({reminderAt: {lte: now}, reminderSentAt: null, archivedAt: null})
+  │ for each: sendLineGroupMessage(buildReminderMessage(task))
+  │           → task.update({reminderSentAt: now})   (prevents duplicate sends)
+  ▼
+[LINE group] receives push notification
+```
+Setup helper: `/api/line/webhook` — invite the bot to the target LINE group, send
+any message, the bot replies with that group's ID to paste into `LINE_GROUP_ID`.
+
 ### Authentication Flow (password + mandatory 2FA)
 ```
 [Login Page]
@@ -467,6 +560,18 @@ returns SessionUser { id, email, username, name, role, avatar }
 [Client] router.push('/dashboard')
 ```
 
+### Late-Arrival Leave Form
+`LeaveType.LATE_ARRIVAL` (มาสาย) uses a form/PDF pair separate from the general
+`LeaveForm`/`LeaveFormPDF` used for sick/personal/maternity/etc.:
+- `src/app/dashboard/leaves/page.tsx` branches on `selectedLeave.type === 'LATE_ARRIVAL'`
+  to render `LateArrivalForm` instead of `LeaveForm`.
+- `LateArrivalForm.tsx` computes fiscal-year (Oct 1–Sep 30) late-arrival stats
+  (`LateArrivalStats`: exempt/late counts, past vs. total) from `userLeaves` and
+  passes them into `LateArrivalFormPDF.tsx` for the printed/downloaded form.
+- Both components strip a system-generated `[...]` prefix (half-day/hours/out-back-time
+  tags) from `reason` before display via a shared `REASON_PREFIX_RE` regex —
+  currently duplicated in both files (see §13).
+
 ---
 
 ## 11. Config & Environment
@@ -486,6 +591,19 @@ WEBAUTHN_ORIGIN=http://localhost:3000
 
 # 2FA — encrypts TOTP secret at rest; back it up (losing it forces re-enrollment)
 TWO_FACTOR_ENC_KEY=<openssl rand -base64 32>
+
+# LINE Messaging API — task reminders (Group push, not the deprecated LINE Notify)
+LINE_CHANNEL_ACCESS_TOKEN=<from LINE Developers console>
+LINE_CHANNEL_SECRET=<from LINE Developers console>          # verifies /api/line/webhook signatures
+LINE_GROUP_ID=<discovered via /api/line/webhook, see §10>
+
+# Cron — protects /api/cron/reminders from unauthenticated calls
+CRON_SECRET=<random string, matched via x-cron-secret header>
+
+# Optional: backups, logging shipping (see lib/logger.ts, scripts/backup.ts)
+BACKUP_DIR=, BACKUP_RETENTION_DAYS=
+LOG_LEVEL=, LOG_SERVICE=, LOG_SERVICE_URL=, LOG_SERVICE_KEY=
+ALLOWED_ORIGINS=   # explicit CORS allowlist for prod (see proxy.ts)
 ```
 
 ### `next.config.js`
@@ -509,14 +627,14 @@ TWO_FACTOR_ENC_KEY=<openssl rand -base64 32>
 | prisma / @prisma/client | ^5.7.0 | ORM |
 | zod | ^3.22.4 | Validation |
 | bcryptjs | ^2.4.3 | Password hashing + backup-code hashing |
-| @simplewebauthn/server | ^13 | Passkey (WebAuthn) server verification |
-| @simplewebauthn/browser | ^13 | Passkey client ceremony (startRegistration/Authentication) |
-| otplib | ^13 | TOTP generate/verify (2FA) |
-| qrcode | ^1 | 2FA enrollment QR (data URL) |
-| exceljs | ^4.4.0 | Supplies Excel export (styled) |
+| @simplewebauthn/server | ^13.3.2 | Passkey (WebAuthn) server verification |
+| @simplewebauthn/browser | ^13.3.0 | Passkey client ceremony (startRegistration/Authentication) |
+| otplib | ^13.4.1 | TOTP generate/verify (2FA) |
+| qrcode | ^1.5.4 | 2FA enrollment QR (data URL) |
+| exceljs | ^4.4.0 | Supplies/documents Excel export (styled) |
 | xlsx | ^0.18.5 | Assets Excel export |
 | file-type | ^22.0.1 | Server-side MIME detection for uploads |
-| @react-pdf/renderer | ^4.3.2 | Leave PDF generation |
+| @react-pdf/renderer | ^4.3.2 | Leave / late-arrival PDF generation |
 | recharts | ^3.7.0 | Dashboard charts |
 | lucide-react | ^0.563.0 | Icons |
 | tailwind-merge / clsx | ^2.2.0 / ^2.0.0 | Class utilities |
@@ -544,10 +662,13 @@ TWO_FACTOR_ENC_KEY=<openssl rand -base64 32>
 | All GET supply/asset routes | No `isManagerOrAbove` check — EMPLOYEE role can enumerate all supplies, transactions, and asset checkouts. | Medium |
 | No test files | Zero unit/integration tests across the entire codebase. | High |
 | Session cleanup | Expired sessions accumulate in DB — no cron job to prune `sessions` table. Same applies to `webauthn_challenges` and `two_factor_challenges` (only deleted on success/expiry-hit; abandoned login flows leave rows). | Medium |
-| Hand-written migrations | `add_passkey_webauthn` and `add_two_factor` migration SQL was authored by hand (NAS DB unreachable from dev). Verify with `prisma migrate status` after `migrate deploy`; the 2FA one does `ALTER TABLE users`. | Medium |
+| Hand-written migrations | Some early migration SQL (passkey/2FA) was authored by hand (NAS DB unreachable from dev). Verify with `prisma migrate status` after `migrate deploy`. | Medium |
 | Mandatory 2FA rollout | All existing users are forced into 2FA enrollment at next login. Admin-reset endpoint (`DELETE /api/auth/2fa/[userId]`) covers lost devices; ensure ≥1 admin can enroll. | Low |
-| `LeaveForm.tsx` | Fiscal year calc (Oct 1–Sep 30) duplicated in `leave-stats` API. Should be a shared utility. | Low |
-| `src/lib/logger.ts` | Production JSON logs have no rotation/shipping configured. | Low |
+| `LeaveForm.tsx` / `LateArrivalForm.tsx` | Fiscal year calc (Oct 1–Sep 30) is duplicated across `leave-stats` API, `LeaveForm.tsx`, and `LateArrivalForm.tsx`. Should be a shared utility. | Low |
+| `LateArrivalForm.tsx` / `LateArrivalFormPDF.tsx` | `REASON_PREFIX_RE` regex and `formatThaiDate`/`thaiMonths` are duplicated verbatim in both files instead of shared. | Low |
+| `public/uploads/` | Legacy disk-based upload dir; uploads now persist to the `uploaded_files` DB table via `scripts/migrate-uploads-to-db.ts`. Confirm no code path still writes here before removing. | Low |
+| `/api/cron/reminders` | Relies solely on a static shared secret (`CRON_SECRET`) with no rate limiting — acceptable for a NAS-internal scheduler but would need hardening if ever exposed publicly. | Low |
+| `src/lib/logger.ts` | Production JSON logs have no rotation/shipping configured by default (optional `LOG_SERVICE*` env vars exist but are unset). | Low |
 
 ---
 
@@ -564,6 +685,12 @@ pnpm db:migrate   # Run pending migrations (dev)
 pnpm db:studio    # Open Prisma Studio
 pnpm db:seed      # Run seed
 
+pnpm db:import-assets       # Bulk-import assets (scripts/import-assets.ts)
+pnpm db:migrate-uploads     # One-off: move disk uploads into UploadedFile table
+pnpm db:fix-leave-years     # Data repair: Buddhist-year leave dates
+pnpm db:fix-html-entities   # Data repair: un-escape HTML entities in stored text
+pnpm db:backup / db:backup:list / db:restore
+
 npx prisma db push  # Sync schema to DB without migration (used for new fields)
 
 docker-compose up -d              # Start MariaDB
@@ -576,13 +703,13 @@ docker-compose --profile admin up # + phpMyAdmin on :8080
 
 ### Audit Log
 - Add `AuditLog` model (entity, action, userId, changes JSON, createdAt)
-- Wire into user/supply/asset mutations
+- Wire into user/supply/asset/document mutations
 - New admin page: `/dashboard/audit`
 
 ### Notifications / Reminders
-- `Notification` model (userId, message, isRead, createdAt)
-- Hook into leave approve/reject and asset overdue returns
-- Client: polling or Server-Sent Events
+- Task reminders now push to LINE (`/api/cron/reminders`) — extend the same pattern to
+  leave approvals/rejections and asset overdue-return alerts
+- In-app `Notification` model (userId, message, isRead, createdAt) as an alternative/complement to LINE
 
 ### Leave Balance Tracking
 - Extend `User` or add `LeaveBalance` model
@@ -600,4 +727,8 @@ docker-compose --profile admin up # + phpMyAdmin on :8080
 ### Supply/Asset Enhancements
 - QR code generation for asset tags
 - Scheduled inspection reminders
-- Low-stock email alerts for STOCK supplies
+- Low-stock email/LINE alerts for STOCK supplies (dashboard widget already surfaces this; automate the push)
+
+### Document Register Enhancements
+- Attach scanned files (`UploadedFile`) directly to a `DocumentRegister` row
+- Full-text search across `subject`/`remarks`

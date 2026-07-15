@@ -317,6 +317,193 @@ npx prisma db push
 DEBUG="prisma:*" npm run dev
 ```
 
+## 🎓 เรียนรู้การทำงานของฟีเจอร์ค้นหา (Step-by-step สำหรับผู้เริ่มต้น)
+
+ส่วนนี้อธิบายว่า **ฟีเจอร์ค้นหา** ในระบบทำงานอย่างไร ตั้งแต่ผู้ใช้พิมพ์คำค้นหา จนถึงผลลัพธ์ขึ้นมาแสดงบนหน้าจอ โดยใช้ตัวอย่างจริงจาก **หน้า "การลา" (Leaves)** ซึ่งมี flow ครบทุกขั้นตอน ทุกโค้ดที่แปะไว้เป็นโค้ดจริงในโปรเจกต์ (มีระบุไฟล์ + เลขบรรทัดกำกับ) เปิดไฟล์จริงตามไปดูควบคู่กันได้เลย
+
+ไฟล์หลักที่เกี่ยวข้อง:
+- `src/app/dashboard/leaves/page.tsx` — หน้าจอฝั่งผู้ใช้ (input, ปุ่ม, การแสดงผล)
+- `src/app/api/leaves/search/route.ts` — API ฝั่ง server ที่ค้นข้อมูลในฐานข้อมูล
+
+### ขั้นที่ 1 — วางช่องกรอกค้นหา (Input Box)
+
+ก่อนอื่นต้องมีช่องให้ผู้ใช้พิมพ์คำค้นหา ในหน้า Leaves มี 2 แบบ คือค้นด้วยชื่อ กับค้นด้วยวันที่ (`src/app/dashboard/leaves/page.tsx:912-936`):
+
+```tsx
+<input
+  type="text"
+  placeholder="พิมพ์ชื่อพนักงาน..."
+  value={searchName}
+  onChange={(e) => setSearchName(e.target.value)}
+  onKeyDown={(e) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  }}
+  className="w-full pl-10 pr-4 py-2 rounded-lg border ..."
+/>
+```
+
+- `value={searchName}` ผูกช่อง input เข้ากับตัวแปร state ชื่อ `searchName` — นี่คือสิ่งที่ทำให้ input "จำ" ค่าที่พิมพ์ไว้ได้
+- `onChange` คือ event ที่ React จะเรียกทุกครั้งที่ผู้ใช้พิมพ์แม้แต่ตัวอักษรเดียว
+
+### ขั้นที่ 2 — เก็บคำที่พิมพ์ไว้ในตัวแปร (State)
+
+ตัวแปร `searchName` ที่เห็นด้านบนถูกประกาศไว้ด้วย `useState` (`page.tsx:121-124`):
+
+```tsx
+const [searchType, setSearchType] = useState<'name' | 'date'>('name');
+const [searchName, setSearchName] = useState('');
+const [searchDate, setSearchDate] = useState('');
+const [searchFormCategory, setSearchFormCategory] = useState<LeaveFormCategory | null>(null);
+```
+
+ทุกครั้งที่ผู้ใช้พิมพ์ใน input จากขั้นที่ 1 ค่าจะถูกอัปเดตเข้ามาเก็บใน state เหล่านี้แบบ real-time ผ่าน `setSearchName(e.target.value)` — เปรียบเหมือน "กล่องเก็บค่า" ที่ React คอยจำไว้ให้ตลอดเวลาที่หน้าจอยังเปิดอยู่
+
+### ขั้นที่ 3 — เมื่อกดค้นหา นำคำค้นหาไปประกอบเป็น URL
+
+เมื่อผู้ใช้สั่งค้นหา (จะกดปุ่มหรือกด Enter ก็ตาม — ดูขั้นที่ 5) ฟังก์ชัน `handleSearch` จะถูกเรียก และส่วนแรกที่มันทำคือแปลงคำค้นหาให้กลายเป็น URL (`page.tsx:282-291`):
+
+```tsx
+const params: string[] = [];
+if (searchType === 'name' && searchName) {
+  params.push(`name=${encodeURIComponent(searchName)}`);
+} else if (searchType === 'date' && searchDate) {
+  params.push(`date=${searchDate}`);
+}
+if (searchFormCategory) {
+  params.push(`formCategory=${searchFormCategory}`);
+}
+const url = `/api/leaves/search?${params.join('&')}`;
+```
+
+- สร้าง array `params` ไว้เก็บเงื่อนไขค้นหาแต่ละอย่างเป็น string
+- เช็คว่าผู้ใช้กำลังค้นด้วยชื่อหรือวันที่ แล้ว `push` เป็น `name=...` หรือ `date=...`
+- `encodeURIComponent(searchName)` ใช้เข้ารหัสอักขระพิเศษ (เช่น เว้นวรรค, ภาษาไทย) ไม่ให้ URL พัง
+- สุดท้าย `join('&')` รวมทุกเงื่อนไขเป็น query string เดียว แล้วประกอบเป็น URL เต็ม เช่น `/api/leaves/search?name=สมชาย`
+
+### ขั้นที่ 4 — ส่ง URL ไปถาม Server ด้วย fetch แล้วรอผลลัพธ์
+
+ต่อจากขั้นที่ 3 โค้ดจะยิง URL นั้นไปหา server ทันที (`page.tsx:293-294`):
+
+```tsx
+const response = await fetch(url);
+const data = await response.json();
+```
+
+ฝั่ง server ที่ไฟล์ `src/app/api/leaves/search/route.ts` จะรับ URL นี้ อ่านค่าที่แนบมาด้วย (`route.ts:42-47`):
+
+```ts
+const { searchParams } = new URL(request.url);
+const name = searchParams.get('name');
+const date = searchParams.get('date');
+```
+
+แล้วนำไปค้นในฐานข้อมูลจริงผ่าน Prisma (`route.ts:84-102`):
+
+```ts
+const leaves = await prisma.leave.findMany({
+  where,
+  include: { user: { select: { id: true, name: true, /* ... */ } } },
+  orderBy: { startDate: 'desc' },
+  take: 200,
+});
+
+return NextResponse.json({ success: true, data: leaves, count: leaves.length });
+```
+
+พูดง่ายๆ คือ: **ฝั่งหน้าจอ "ถาม"** ด้วย URL → **ฝั่ง server "ตอบกลับ"** เป็นข้อมูล JSON
+
+### ขั้นที่ 5 — จัดการปุ่มกดค้นหา และปุ่ม Enter
+
+สังเกตว่าใน input ของขั้นที่ 1 มี `onKeyDown` ที่เช็คว่าเป็นปุ่ม Enter หรือไม่ และนอกจากนั้นยังมีปุ่ม "ค้นหา" แยกไว้ต่างหาก (`page.tsx:938-943`):
+
+```tsx
+<button onClick={handleSearch} className="px-4 py-2 bg-indigo-600 text-white rounded-lg ...">
+  ค้นหา
+</button>
+```
+
+จุดสำคัญคือ **ทั้งสองทางเรียกฟังก์ชันเดียวกัน** คือ `handleSearch` — ไม่ว่าผู้ใช้จะกด Enter หรือคลิกปุ่ม ผลลัพธ์คือเหมือนกันทุกประการ เพราะ logic ทั้งหมด (ขั้นที่ 3-4) อยู่ในฟังก์ชันเดียว ไม่ต้องเขียนซ้ำสองที่
+
+### ขั้นที่ 6 — แสดงผลลัพธ์บนหน้าจอ
+
+เมื่อ `data` กลับมาจาก server แล้ว (ขั้นที่ 4) ต้องมีพื้นที่แสดงผล ส่วนนี้อยู่ใน JSX ท้ายไฟล์ (`page.tsx:1051-1057`):
+
+```tsx
+{leaves.length === 0 ? (
+  <div className="text-center py-12 bg-white rounded-xl border border-slate-200">
+    <p className="text-slate-500">ไม่มีข้อมูลการลา</p>
+  </div>
+) : (
+  leaves.map((leave) => (
+    <div key={leave.id} className="bg-white rounded-xl shadow-sm border ...">
+      {/* รายละเอียดการลาแต่ละรายการ */}
+    </div>
+  ))
+)}
+```
+
+- ถ้า `leaves` (state ที่เก็บผลลัพธ์) ว่างเปล่า → แสดงข้อความ "ไม่มีข้อมูล"
+- ถ้ามีข้อมูล → ใช้ `.map()` วนลูปสร้างการ์ดแสดงผลทีละรายการ
+
+### ขั้นที่ 7 — เมื่อค้นหาใหม่ ให้ลบผลลัพธ์เก่าก่อนแสดงผลใหม่
+
+นี่คือจุดที่มักสับสนที่สุดสำหรับผู้เริ่มต้น: **ไม่ต้องเขียนโค้ดลบผลลัพธ์เก่าออกเองเลย** กลับไปดู `handleSearch` อีกครั้ง (`page.tsx:296-297`):
+
+```tsx
+if (data.success) {
+  setLeaves(data.data);       // <-- บรรทัดนี้แหละคือคำตอบ
+  setHasMoreLeaves(false);
+}
+```
+
+`setLeaves(data.data)` คือการ**แทนที่ state ทั้งก้อน** ด้วยข้อมูลใหม่ ไม่ใช่การ "เพิ่มต่อท้าย" ของเดิม เพราะฉะนั้นพอ state เปลี่ยน React จะรู้ทันทีว่าต้อง render ใหม่ทั้งหมดตามขั้นที่ 6 — ผลลัพธ์เก่าที่เคยแสดงอยู่จึงหายไปเองโดยอัตโนมัติ แล้วผลลัพธ์ใหม่ก็เข้ามาแทนที่ ไม่ต้องมีโค้ด "ลบ DOM" แยกต่างหากแต่อย่างใด
+
+### ขั้นที่ 8 (โบนัส) — ปุ่มรีเซ็ตการค้นหา
+
+นอกจากปุ่มค้นหา ยังมีปุ่ม "รีเซ็ต" ที่ล้างคำค้นหาแล้วโหลดรายการเริ่มต้นกลับมา ใช้ pattern เดียวกับขั้นที่ 3-4 (`page.tsx:311-329`):
+
+```tsx
+const resetSearch = async () => {
+  setSearchName('');
+  setSearchDate('');
+  setSearchFormCategory(null);
+
+  const response = await fetch(`/api/leaves?page=1&limit=${LEAVES_PAGE_SIZE}`);
+  const data = await response.json();
+  if (data.success) {
+    setLeaves(data.data);
+    setLeavesPage(1);
+    setHasMoreLeaves(Boolean(data.meta?.hasMore));
+  }
+};
+```
+
+### สรุป Flow แบบภาพรวม
+
+```
+พิมพ์ในช่อง input → onChange เก็บลง state (searchName)
+     ↓ (กด Enter หรือคลิกปุ่ม "ค้นหา")
+handleSearch() → ประกอบ URL จาก state
+     ↓
+fetch(url) → เรียก API /api/leaves/search
+     ↓
+Server ค้นในฐานข้อมูล (Prisma) → ตอบกลับ JSON
+     ↓
+setLeaves(data.data) → แทนที่ผลลัพธ์เก่าด้วยผลลัพธ์ใหม่ทั้งก้อน
+     ↓
+React render การ์ดผลลัพธ์ใหม่บนหน้าจอทันที
+```
+
+### เกร็ดเสริม — Pattern อื่นที่ใช้ในโปรเจกต์นี้
+
+ในหน้า Employees, Documents, Supplies และ Assets ก็มีช่องค้นหาเหมือนกัน แต่ใช้วิธีที่ต่างออกไป: แทนที่จะยิง `fetch` ไปหา server ใหม่ทุกครั้ง จะใช้ `useMemo` **กรองข้อมูลที่โหลดมาไว้แล้วในเครื่อง** (client-side filter) ซึ่งเร็วกว่าเพราะไม่ต้องรอ server แต่ใช้ได้เฉพาะกรณีที่ข้อมูลทั้งหมดโหลดมาอยู่ในเครื่องแล้ว ลองเปิดไฟล์เหล่านี้เทียบดูเป็นแบบฝึกหัดต่อยอด:
+- `src/app/dashboard/employees/page.tsx`
+- `src/app/dashboard/documents/page.tsx`
+- `src/app/dashboard/supplies/page.tsx`
+- `src/app/dashboard/assets/page.tsx`
+
 ## License
 
 MIT License

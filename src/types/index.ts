@@ -355,6 +355,11 @@ export interface DashboardStats {
   totalTasks: number;
   // ข้อมูลเพิ่มเติมสำหรับระบบ column ใหม่
   tasksByColumn?: { columnId: number; columnName: string; count: number }[];
+  // ข้อมูลเพิ่มเติมสำหรับภาพรวมพัสดุ/ครุภัณฑ์
+  lowStockCount?: number;
+  assetsInUse?: number;
+  assetsInRepair?: number;
+  overdueCheckoutsCount?: number;
 }
 
 /**
@@ -366,6 +371,43 @@ export interface RecentActivity {
   description: string;
   user: string;
   createdAt: Date;
+}
+
+/**
+ * สรุปพัสดุใกล้หมด (สำหรับ widget แดชบอร์ด)
+ */
+export interface LowStockSupplySummary {
+  id: number;
+  name: string;
+  unit: string | null;
+  currentQuantity: number;
+  minimumQuantity: number;
+  category: Pick<SupplyCategory, 'id' | 'name'> | null;
+}
+
+/**
+ * สรุปรายการยืมครุภัณฑ์ที่เกินกำหนดคืน (สำหรับ widget แดชบอร์ด)
+ */
+export interface OverdueCheckoutSummary {
+  id: number;
+  expectedReturnAt: string;
+  asset: Pick<Asset, 'id' | 'name' | 'assetTag'>;
+  holder: Pick<User, 'id' | 'name' | 'avatar' | 'department'>;
+}
+
+/**
+ * รายการคำขอลารออนุมัติล่าสุด (สำหรับ widget แดชบอร์ด)
+ */
+export interface RecentPendingLeaveSummary extends Omit<Leave, 'user'> {
+  user: Pick<User, 'id' | 'name' | 'avatar' | 'department'>;
+}
+
+/**
+ * รายการงานล่าสุด (สำหรับ widget แดชบอร์ด)
+ */
+export interface RecentTaskSummary extends Omit<Task, 'column' | 'assignee'> {
+  column: KanbanColumn;
+  assignee: Pick<User, 'id' | 'name' | 'avatar'> | null;
 }
 
 // ============================================

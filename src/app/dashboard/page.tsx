@@ -2,34 +2,31 @@
  * ==================================================
  * Dashboard Page - หน้าแดชบอร์ดหลัก
  * ==================================================
- * แสดงกราฟสถิติการลาแยกประเภท ในปีงบประมาณปัจจุบัน
+ * ภาพรวมทั้งระบบในหน้าเดียว — พนักงาน, การลา, งาน, พัสดุ, ครุภัณฑ์
  */
 
 'use client';
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { Users, Calendar, Clock, Package, AlertTriangle, Loader2 } from 'lucide-react';
 import {
-  Users,
-  Calendar,
-  Clock,
-  CheckCircle,
-  Loader2,
-  Filter,
-  RefreshCw,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { DashboardStats } from '@/types';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
+  DashboardStats,
+  RecentPendingLeaveSummary,
+  RecentTaskSummary,
+  LowStockSupplySummary,
+  OverdueCheckoutSummary,
+} from '@/types';
+import { LeaveRecord, UserSummary, LeaveStatsData } from '@/components/dashboard/types';
+import { leaveTypeConfig } from '@/components/dashboard/leaveTypeConfig';
+import StatCard from '@/components/dashboard/StatCard';
+import LeaveFilterPanel from '@/components/dashboard/LeaveFilterPanel';
+import LeaveChart from '@/components/dashboard/LeaveChart';
+import LeavePersonTable from '@/components/dashboard/LeavePersonTable';
+import PendingApprovalsList from '@/components/dashboard/PendingApprovalsList';
+import RecentTasksList from '@/components/dashboard/RecentTasksList';
+import LowStockSuppliesWidget from '@/components/dashboard/LowStockSuppliesWidget';
+import AssetStatusWidget from '@/components/dashboard/AssetStatusWidget';
 
 /**
  * ข้อมูลสถิติเริ่มต้น
@@ -45,88 +42,17 @@ const defaultStats: DashboardStats = {
 };
 
 /**
- * สีสำหรับแต่ละประเภทการลา
- */
-const leaveTypeConfig: Record<string, { label: string; color: string; bgClass: string }> = {
-  SICK: { label: 'ลาป่วย', color: '#ef4444', bgClass: 'bg-red-500' },
-  PERSONAL: { label: 'ลากิจ', color: '#f97316', bgClass: 'bg-orange-500' },
-  MATERNITY: { label: 'ลาคลอดบุตร', color: '#ec4899', bgClass: 'bg-pink-500' },
-  ORDINATION: { label: 'ลาบวช', color: '#8b5cf6', bgClass: 'bg-violet-500' },
-  EARLY_LEAVE: { label: 'ออกก่อนเวลา', color: '#ea580c', bgClass: 'bg-orange-600' },
-  LATE_ARRIVAL: { label: 'มาสาย', color: '#eab308', bgClass: 'bg-yellow-500' },
-  RUN_AN_ERRAND: { label: 'ออกนอกเขตพระราชฐาน', color: '#06b6d4', bgClass: 'bg-cyan-500' },
-  OTHER: { label: 'ลาอื่นๆ', color: '#64748b', bgClass: 'bg-slate-500' },
-};
-
-
-interface LeaveRecord {
-  id: number;
-  userId: number;
-  userName: string;
-  type: string;
-  startDate: string;
-  endDate: string;
-  days: number;
-  isHalfDay: boolean;
-  hours: number | null;
-  status: string;
-  month: number;
-  year: number;
-}
-
-/**
- * ฟอร์แมตจำนวนวัน (รองรับครึ่งวัน/ชม.)
- */
-function fmtDays(days: number): string {
-  if (days === 0) return '0';
-  if (days % 1 === 0) return `${days}`;
-  return days.toFixed(1);
-}
-
-interface UserInfo {
-  userId: number;
-  userName: string;
-  avatar: string | null;
-  department: string | null;
-}
-
-interface UserSummary {
-  userId: number;
-  userName: string;
-  avatar: string | null;
-  department: string | null;
-  byType: Record<string, { count: number; days: number }>;
-  totalCount: number;
-  totalDays: number;
-}
-
-interface FiscalYearOption {
-  label: string;
-  value: number;
-}
-
-interface LeaveStatsData {
-  fiscalYear: string;
-  fiscalStartYear: number;
-  availableFiscalYears: FiscalYearOption[];
-  fiscalRange: { start: string; end: string };
-  fiscalMonths: string[];
-  chartData: Record<string, any>[];
-  users: UserInfo[];
-  userSummaries: UserSummary[];
-  leaves: LeaveRecord[];
-}
-
-
-/**
  * หน้าแดชบอร์ดหลัก
- * แสดงกราฟสถิติการลาในปีงบประมาณ
  */
 export default function DashboardPage() {
   const router = useRouter();
 
   const [stats, setStats] = useState<DashboardStats>(defaultStats);
   const [leaveStats, setLeaveStats] = useState<LeaveStatsData | null>(null);
+  const [recentPendingLeaves, setRecentPendingLeaves] = useState<RecentPendingLeaveSummary[]>([]);
+  const [recentTasks, setRecentTasks] = useState<RecentTaskSummary[]>([]);
+  const [lowStockSupplies, setLowStockSupplies] = useState<LowStockSupplySummary[]>([]);
+  const [overdueCheckouts, setOverdueCheckouts] = useState<OverdueCheckoutSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,7 +75,6 @@ export default function DashboardPage() {
   }) => {
     try {
       const params = new URLSearchParams();
-      // ใช้ ?? เพื่อให้ค่า '' (empty string) สามารถ override ได้ (หมายถึง reset)
       const fy = options?.fiscalYear !== undefined ? options.fiscalYear : selectedFiscalYear;
       const tp = options?.type !== undefined ? options.type : selectedType;
       const sd = options?.startDate !== undefined ? options.startDate : customStartDate;
@@ -197,6 +122,10 @@ export default function DashboardPage() {
 
         if (dashData.success) {
           setStats(dashData.data.stats);
+          setRecentPendingLeaves(dashData.data.recentPendingLeaves || []);
+          setRecentTasks(dashData.data.recentTasks || []);
+          setLowStockSupplies(dashData.data.lowStockSupplies || []);
+          setOverdueCheckouts(dashData.data.overdueCheckouts || []);
         }
 
         if (leaveData.success) {
@@ -263,7 +192,7 @@ export default function DashboardPage() {
   /**
    * กรองข้อมูลการลาตามเดือน
    */
-  const filteredLeaves = useMemo(() => {
+  const filteredLeaves = useMemo<LeaveRecord[]>(() => {
     if (!leaveStats) return [];
     let leaves = leaveStats.leaves;
 
@@ -281,14 +210,12 @@ export default function DashboardPage() {
   const chartDataByPerson = useMemo(() => {
     if (!leaveStats) return [];
 
-    // กรองตามเดือนถ้าเลือก
     let relevantLeaves = leaveStats.leaves;
     if (selectedMonth !== 'ALL') {
       const [mIdx, yr] = selectedMonth.split('-').map(Number);
       relevantLeaves = relevantLeaves.filter((l) => l.month === mIdx && l.year === yr);
     }
 
-    // หา users ที่มีการลา
     const userIds = Array.from(new Set(relevantLeaves.map((l) => l.userId)));
 
     return userIds.map((userId) => {
@@ -311,7 +238,7 @@ export default function DashboardPage() {
   /**
    * สร้างตารางสรุปรายคน (เฉพาะคนที่มีการลา)
    */
-  const userTableData = useMemo(() => {
+  const userTableData = useMemo<UserSummary[]>(() => {
     if (!leaveStats) return [];
 
     return leaveStats.userSummaries
@@ -356,6 +283,7 @@ export default function DashboardPage() {
       borderColor: 'border-indigo-500',
       bgColor: 'bg-indigo-50',
       iconColor: 'text-indigo-600',
+      href: '/dashboard/employees',
     },
     {
       title: 'คำขอลา (รออนุมัติ)',
@@ -365,6 +293,7 @@ export default function DashboardPage() {
       borderColor: 'border-amber-500',
       bgColor: 'bg-amber-50',
       iconColor: 'text-amber-600',
+      href: '/dashboard/leaves',
     },
     {
       title: 'งานทั้งหมด',
@@ -374,15 +303,27 @@ export default function DashboardPage() {
       borderColor: 'border-blue-500',
       bgColor: 'bg-blue-50',
       iconColor: 'text-blue-600',
+      href: '/dashboard/tasks',
     },
     {
-      title: 'คอลัมน์ใน Kanban',
-      value: stats.tasksByColumn?.length || 0,
-      subtext: 'จัดการงาน',
-      icon: CheckCircle,
-      borderColor: 'border-emerald-500',
-      bgColor: 'bg-emerald-50',
-      iconColor: 'text-emerald-600',
+      title: 'พัสดุใกล้หมด',
+      value: stats.lowStockCount ?? 0,
+      subtext: 'ต้องเติมสต็อก',
+      icon: Package,
+      borderColor: 'border-rose-500',
+      bgColor: 'bg-rose-50',
+      iconColor: 'text-rose-600',
+      href: '/dashboard/supplies',
+    },
+    {
+      title: 'ครุภัณฑ์เกินกำหนดคืน',
+      value: stats.overdueCheckoutsCount ?? 0,
+      subtext: 'รอติดตามคืน',
+      icon: AlertTriangle,
+      borderColor: 'border-orange-500',
+      bgColor: 'bg-orange-50',
+      iconColor: 'text-orange-600',
+      href: '/dashboard/assets',
     },
   ];
 
@@ -409,28 +350,9 @@ export default function DashboardPage() {
       )}
 
       {/* การ์ดสถิติ */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         {statCards.map((card, index) => (
-          <div
-            key={index}
-            className={cn(
-              "bg-white rounded-xl p-6 shadow-sm border border-slate-200",
-              "border-l-4",
-              card.borderColor,
-              "hover:shadow-md transition-shadow",
-            )}
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-slate-500 text-sm mb-1">{card.title}</p>
-                <h3 className="text-3xl font-bold text-slate-800">{card.value}</h3>
-                <p className="text-xs text-slate-400 mt-2">{card.subtext}</p>
-              </div>
-              <div className={cn("p-3 rounded-lg", card.bgColor)}>
-                <card.icon className={cn("w-6 h-6", card.iconColor)} />
-              </div>
-            </div>
-          </div>
+          <StatCard key={index} {...card} />
         ))}
       </div>
 
@@ -453,177 +375,25 @@ export default function DashboardPage() {
           </div>
 
           {/* Filters */}
-          <div className="flex flex-wrap items-end gap-3 mb-6 p-4 bg-slate-50 rounded-lg border border-slate-100">
-            <Filter size={16} className="text-slate-400 mb-2" />
+          <LeaveFilterPanel
+            availableFiscalYears={leaveStats.availableFiscalYears}
+            fiscalMonthOptions={fiscalMonthOptions}
+            selectedFiscalYear={selectedFiscalYear}
+            selectedType={selectedType}
+            selectedMonth={selectedMonth}
+            customStartDate={customStartDate}
+            customEndDate={customEndDate}
+            isRefreshing={isRefreshing}
+            onFiscalYearChange={handleFiscalYearChange}
+            onTypeChange={handleTypeChange}
+            onMonthChange={setSelectedMonth}
+            onStartDateChange={setCustomStartDate}
+            onEndDateChange={setCustomEndDate}
+            onDateRangeSearch={handleDateRangeSearch}
+            onReset={handleResetFilters}
+          />
 
-            {/* ปีงบประมาณ */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-500 font-medium">ปีงบประมาณ</label>
-              <select
-                value={selectedFiscalYear}
-                onChange={(e) => handleFiscalYearChange(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">ปีปัจจุบัน</option>
-                {leaveStats.availableFiscalYears?.map((fy) => (
-                  <option key={fy.value} value={fy.value.toString()}>
-                    {fy.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* ประเภทการลา */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-500 font-medium">ประเภทการลา</label>
-              <select
-                value={selectedType}
-                onChange={(e) => handleTypeChange(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="ALL">ทั้งหมด</option>
-                {Object.entries(leaveTypeConfig).map(([type, cfg]) => (
-                  <option key={type} value={type}>{cfg.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* เดือน */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-500 font-medium">เดือน</label>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="ALL">ทั้งปีงบประมาณ</option>
-                {fiscalMonthOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* ช่วงเวลา */}
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-500 font-medium">ช่วงเวลา (เริ่มต้น)</label>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-500 font-medium">ช่วงเวลา (สิ้นสุด)</label>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-            <button
-              onClick={handleDateRangeSearch}
-              disabled={!customStartDate || !customEndDate}
-              className="text-sm px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
-            >
-              ค้นหา
-            </button>
-
-            {/* ปุ่มรีเซ็ต */}
-            <button
-              onClick={handleResetFilters}
-              className="text-sm px-3 py-1.5 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1"
-            >
-              <RefreshCw size={14} />
-              รีเซ็ต
-            </button>
-          </div>
-
-          {/* Legend */}
-          <div className="flex flex-wrap items-center gap-3 mb-4">
-            {activeLeaveTypes.map((type) => (
-              <div key={type} className="flex items-center gap-1.5 text-xs">
-                <span
-                  className="w-3 h-3 rounded-sm"
-                  style={{ backgroundColor: leaveTypeConfig[type].color }}
-                />
-                <span className="text-slate-600">{leaveTypeConfig[type].label}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Chart */}
-          {chartDataByPerson.length > 0 ? (
-            <div>
-              <ResponsiveContainer width="100%" height={Math.max(400, chartDataByPerson.length * 60)}>
-                <BarChart
-                  data={chartDataByPerson}
-                  layout="vertical"
-                  margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
-                  barCategoryGap="20%"
-                  barGap={2}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                  <XAxis
-                    type="number"
-                    tick={{ fontSize: 12, fill: '#64748b' }}
-                    tickLine={false}
-                    axisLine={false}
-                    label={{
-                      value: 'วัน',
-                      position: 'insideBottomRight',
-                      offset: -5,
-                      style: { fontSize: 12, fill: '#94a3b8' },
-                    }}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    tick={{ fontSize: 13, fill: '#334155' }}
-                    tickLine={false}
-                    axisLine={false}
-                    width={120}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                      fontSize: '13px',
-                    }}
-                    formatter={(value: any, name?: string) => {
-                      const cfg = leaveTypeConfig[name || ''];
-                      return [`${fmtDays(value)} วัน`, cfg?.label || name];
-                    }}
-                  />
-                  <Legend
-                    formatter={(value: string) => {
-                      const cfg = leaveTypeConfig[value];
-                      return cfg?.label || value;
-                    }}
-                    wrapperStyle={{ fontSize: '13px' }}
-                  />
-
-                  {activeLeaveTypes.map((type) => (
-                    <Bar
-                      key={type}
-                      dataKey={type}
-                      fill={leaveTypeConfig[type].color}
-                      radius={[0, 4, 4, 0]}
-                      barSize={16}
-                    />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-              <p className="text-slate-400 text-sm">ไม่มีข้อมูลการลาในช่วงที่เลือก</p>
-            </div>
-          )}
+          <LeaveChart chartData={chartDataByPerson} activeLeaveTypes={activeLeaveTypes} />
         </div>
       )}
 
@@ -633,102 +403,11 @@ export default function DashboardPage() {
           <h2 className="text-lg font-bold text-slate-800 mb-4">
             สรุปการลารายบุคคล
           </h2>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left py-3 px-4 font-semibold text-slate-600">ชื่อ</th>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-600">หน่วยงาน</th>
-                  {Object.entries(leaveTypeConfig).map(([type, cfg]) => {
-                    const hasData = userTableData.some(
-                      (u) => u.byType[type] && u.byType[type].count > 0,
-                    );
-                    if (!hasData) return null;
-                    return (
-                      <th key={type} className="text-center py-3 px-3 font-semibold text-slate-600">
-                        <span className="flex items-center justify-center gap-1.5">
-                          <span
-                            className="w-2.5 h-2.5 rounded-full"
-                            style={{ backgroundColor: leaveTypeConfig[type].color }}
-                          />
-                          {cfg.label}
-                        </span>
-                      </th>
-                    );
-                  })}
-                  <th className="text-center py-3 px-4 font-semibold text-slate-600">รวม (ครั้ง)</th>
-                  <th className="text-center py-3 px-4 font-semibold text-slate-600">รวม (วัน)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {userTableData.map((u, idx) => {
-                  // ถ้าเลือกเดือน ให้กรองข้อมูลเฉพาะเดือนนั้น
-                  let displayData = u;
-                  if (selectedMonth !== 'ALL') {
-                    const [mIdx, yr] = selectedMonth.split('-').map(Number);
-                    const monthLeaves = filteredLeaves.filter(
-                      (l) => l.userId === u.userId && l.month === mIdx && l.year === yr,
-                    );
-                    if (monthLeaves.length === 0) return null;
-
-                    const byType: Record<string, { count: number; days: number }> = {};
-                    for (const l of monthLeaves) {
-                      if (!byType[l.type]) byType[l.type] = { count: 0, days: 0 };
-                      byType[l.type].count++;
-                      byType[l.type].days += l.days;
-                    }
-                    displayData = {
-                      ...u,
-                      byType,
-                      totalCount: monthLeaves.length,
-                      totalDays: Math.round(monthLeaves.reduce((s, l) => s + l.days, 0) * 100) / 100,
-                    };
-                  }
-
-                  return (
-                    <tr
-                      key={u.userId}
-                      className={cn(
-                        "border-b border-slate-100 hover:bg-slate-50 transition-colors",
-                        idx % 2 === 0 ? 'bg-white' : 'bg-slate-25',
-                      )}
-                    >
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700">
-                            {u.avatar || u.userName.charAt(0)}
-                          </div>
-                          <span className="font-medium text-slate-800">{u.userName}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-slate-500">{u.department || '-'}</td>
-                      {Object.entries(leaveTypeConfig).map(([type]) => {
-                        const hasData = userTableData.some(
-                          (uu) => uu.byType[type] && uu.byType[type].count > 0,
-                        );
-                        if (!hasData) return null;
-                        const typeData = displayData.byType[type];
-                        return (
-                          <td key={type} className="text-center py-3 px-3 text-slate-600">
-                            {typeData && typeData.count > 0
-                              ? `${typeData.count}/${fmtDays(typeData.days)}`
-                              : '-'}
-                          </td>
-                        );
-                      })}
-                      <td className="text-center py-3 px-4 font-semibold text-slate-700">
-                        {displayData.totalCount}
-                      </td>
-                      <td className="text-center py-3 px-4 font-semibold text-indigo-600">
-                        {fmtDays(displayData.totalDays)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <LeavePersonTable
+            userTableData={userTableData}
+            filteredLeaves={filteredLeaves}
+            selectedMonth={selectedMonth}
+          />
         </div>
       )}
 
@@ -739,6 +418,26 @@ export default function DashboardPage() {
           <p className="text-slate-400">ไม่มีข้อมูลการลาในปีงบประมาณนี้</p>
         </div>
       )}
+
+      {/* คำขอลารออนุมัติ + งานล่าสุด */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <PendingApprovalsList leaves={recentPendingLeaves} />
+        <RecentTasksList tasks={recentTasks} tasksByColumn={stats.tasksByColumn || []} />
+      </div>
+
+      {/* พัสดุใกล้หมด + ครุภัณฑ์ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <LowStockSuppliesWidget
+          supplies={lowStockSupplies}
+          totalLowStockCount={stats.lowStockCount ?? 0}
+        />
+        <AssetStatusWidget
+          assetsInUse={stats.assetsInUse ?? 0}
+          assetsInRepair={stats.assetsInRepair ?? 0}
+          overdueCheckouts={overdueCheckouts}
+          overdueCount={stats.overdueCheckoutsCount ?? 0}
+        />
+      </div>
     </div>
   );
 }

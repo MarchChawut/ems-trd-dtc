@@ -234,6 +234,7 @@ export async function GET(request: NextRequest) {
         department: string | null;
         leaves: {
           id: number;
+          userId: number;
           type: string;
           startDate: string;
           endDate: string;
@@ -271,6 +272,7 @@ export async function GET(request: NextRequest) {
 
       userMap.get(leave.userId)!.leaves.push({
         id: leave.id,
+        userId: leave.userId,
         type: leave.type,
         startDate: leave.startDate.toISOString(),
         endDate: leave.endDate.toISOString(),

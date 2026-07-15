@@ -48,22 +48,27 @@ export async function GET(request: NextRequest) {
       totalLeaves,
       totalTasks,
       columns,
+      stockSupplies,
+      assetsInUse,
+      assetsInRepair,
+      overdueCheckoutsRows,
+      overdueCheckoutsCount,
     ] = await Promise.all([
       // จำนวนผู้ใช้ทั้งหมด
       prisma.user.count(),
-      
+
       // จำนวนผู้ใช้ที่ active
       prisma.user.count({ where: { isActive: true } }),
-      
+
       // จำนวนการลาที่รออนุมัติ
       prisma.leave.count({ where: { status: 'PENDING' } }),
-      
+
       // จำนวนการลาทั้งหมด
       prisma.leave.count(),
-      
+
       // จำนวนงานทั้งหมด
       prisma.task.count(),
-      
+
       // คอลัมน์ทั้งหมดพร้อมจำนวนงาน
       prisma.kanbanColumn.findMany({
         include: {
@@ -73,6 +78,36 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { order: 'asc' },
       }),
+
+      // พัสดุประเภท STOCK ทั้งหมด (กรองใกล้หมดใน JS)
+      prisma.supply.findMany({
+        where: { isActive: true, type: 'STOCK' },
+        include: {
+          category: { select: { id: true, name: true } },
+        },
+      }),
+
+      // ครุภัณฑ์ที่กำลังใช้งานอยู่
+      prisma.asset.count({ where: { isActive: true, status: 'IN_USE' } }),
+
+      // ครุภัณฑ์ที่กำลังซ่อม
+      prisma.asset.count({ where: { isActive: true, status: 'IN_REPAIR' } }),
+
+      // รายการยืมครุภัณฑ์ที่เกินกำหนดคืน (top 5)
+      prisma.assetCheckout.findMany({
+        where: { returnedAt: null, expectedReturnAt: { lt: new Date() } },
+        include: {
+          asset: { select: { id: true, name: true, assetTag: true } },
+          holder: { select: { id: true, name: true, avatar: true, department: true } },
+        },
+        orderBy: { expectedReturnAt: 'asc' },
+        take: 5,
+      }),
+
+      // จำนวนรวมของรายการยืมครุภัณฑ์ที่เกินกำหนดคืน
+      prisma.assetCheckout.count({
+        where: { returnedAt: null, expectedReturnAt: { lt: new Date() } },
+      }),
     ]);
 
     // แปลงข้อมูล tasksByColumn
@@ -80,6 +115,20 @@ export async function GET(request: NextRequest) {
       columnId: col.id,
       columnName: col.name,
       count: col._count.tasks,
+    }));
+
+    // กรองพัสดุใกล้หมด (currentQuantity <= minimumQuantity)
+    const lowStockSuppliesAll = stockSupplies
+      .filter(s => s.currentQuantity <= s.minimumQuantity)
+      .sort((a, b) => (a.currentQuantity - a.minimumQuantity) - (b.currentQuantity - b.minimumQuantity));
+
+    const lowStockSupplies = lowStockSuppliesAll.slice(0, 5).map(s => ({
+      id: s.id,
+      name: s.name,
+      unit: s.unit,
+      currentQuantity: s.currentQuantity,
+      minimumQuantity: s.minimumQuantity,
+      category: s.category,
     }));
 
     // ดึงข้อมูลการลาล่าสุดที่รออนุมัติ (5 รายการ)
@@ -125,9 +174,15 @@ export async function GET(request: NextRequest) {
           totalLeaves,
           totalTasks,
           tasksByColumn,
+          lowStockCount: lowStockSuppliesAll.length,
+          assetsInUse,
+          assetsInRepair,
+          overdueCheckoutsCount,
         },
         recentPendingLeaves,
         recentTasks,
+        lowStockSupplies,
+        overdueCheckouts: overdueCheckoutsRows,
       },
     });
 
