@@ -42,44 +42,31 @@ function getPeriodRange(
   endDate?: string | null,
 ): { gte: Date; lte: Date } | null {
   if (period === 'custom' && startDate && endDate) {
-    return {
-      gte: new Date(startDate + 'T00:00:00+07:00'),
-      lte: new Date(endDate + 'T23:59:59+07:00'),
-    };
+    return { gte: new Date(startDate), lte: new Date(endDate) };
   }
 
-  const nowUtc = Date.now();
-  const nowThai = new Date(nowUtc + TZ_OFFSET_MS);
+  // DocumentRegister.date เป็น @db.Date (ไม่มีเวลา) และถูกเขียนด้วย new Date("YYYY-MM-DD")
+  // เสมอ (ดู documents/route.ts) จึงต้องเทียบด้วยสตริงวันที่ปฏิทินไทยแบบเดียวกัน
+  // ไม่ใช่ timestamp จริงแบบ getPeriodRange ของ supplies export (ซึ่งเทียบกับคอลัมน์ createdAt ที่เป็น DateTime เต็มรูปแบบ)
+  const nowThai = new Date(Date.now() + TZ_OFFSET_MS);
+  const todayStr = nowThai.toISOString().split('T')[0];
 
   if (period === 'day') {
-    const startOfDayThai = new Date(nowThai);
-    startOfDayThai.setUTCHours(0, 0, 0, 0);
-    return {
-      gte: new Date(startOfDayThai.getTime() - TZ_OFFSET_MS),
-      lte: new Date(),
-    };
+    return { gte: new Date(todayStr), lte: new Date(todayStr) };
   }
 
   if (period === 'week') {
     const day = nowThai.getUTCDay(); // 0=Sun
     const daysFromMonday = day === 0 ? 6 : day - 1;
-    const startOfWeekThai = new Date(nowThai);
-    startOfWeekThai.setUTCDate(nowThai.getUTCDate() - daysFromMonday);
-    startOfWeekThai.setUTCHours(0, 0, 0, 0);
-    return {
-      gte: new Date(startOfWeekThai.getTime() - TZ_OFFSET_MS),
-      lte: new Date(),
-    };
+    const startOfWeek = new Date(nowThai);
+    startOfWeek.setUTCDate(nowThai.getUTCDate() - daysFromMonday);
+    const startStr = startOfWeek.toISOString().split('T')[0];
+    return { gte: new Date(startStr), lte: new Date(todayStr) };
   }
 
   if (period === 'month') {
-    const startOfMonthThai = new Date(nowThai);
-    startOfMonthThai.setUTCDate(1);
-    startOfMonthThai.setUTCHours(0, 0, 0, 0);
-    return {
-      gte: new Date(startOfMonthThai.getTime() - TZ_OFFSET_MS),
-      lte: new Date(),
-    };
+    const startOfMonthStr = `${todayStr.slice(0, 7)}-01`;
+    return { gte: new Date(startOfMonthStr), lte: new Date(todayStr) };
   }
 
   return null;

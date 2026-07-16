@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma';
 import { createDocumentRegisterSchema } from '@/lib/security';
 import { requireAuth, isAdmin } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { toSafeGregorianDate } from '@/lib/utils';
 
 export async function GET(
   request: NextRequest,
@@ -81,7 +82,7 @@ export async function PATCH(
 
     const data = {
       ...result.data,
-      ...(result.data.date !== undefined && { date: new Date(result.data.date) }),
+      ...(result.data.date !== undefined && { date: toSafeGregorianDate(result.data.date) }),
     };
 
     const document = await prisma.documentRegister.update({
