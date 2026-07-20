@@ -163,6 +163,14 @@ rsync -avz --exclude=node_modules --exclude=.git ./ admin@your-synology-ip:/volu
    - **Source**: `https://ems.your-domain.com`
    - **Destination**: `http://localhost:3000`
 
+### 5. ตั้งค่าระบบแจ้งเตือน (Reminder Cron)
+
+ใช้รูปแบบเดียวกันทั้ง Synology และ Linux server:
+`Task Scheduler / cron → scripts/cron-reminders.sh (curl) → Next.js API → Prisma → MariaDB → LINE`
+
+ดูขั้นตอนเต็ม (Synology Task Scheduler / Linux crontab / systemd timer) ใน
+[docs/CRON_SETUP.md](docs/CRON_SETUP.md)
+
 ## โครงสร้างโปรเจกต์
 
 ```
