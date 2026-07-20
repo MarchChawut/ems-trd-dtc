@@ -1,6 +1,6 @@
 # CODEBASE MAP — EMS Admin (ems-trd-dtc)
 
-> Generated: 2026-06-06 · Last updated: 2026-07-19 (local croner+systemd reminder worker)
+> Generated: 2026-06-06 · Last updated: 2026-07-20 (systemd timer-triggered reminder worker + cron lock/log/health-check)
 > Purpose: Context reference for feature development
 
 ---
@@ -514,22 +514,36 @@ Helper functions in `lib/auth.ts`:
 [External scheduler] GET /api/cron/reminders  (x-cron-secret header, ~every 1 min)
    ├─ Cloudflare Worker (cloudflare/cron-reminders/) — public HTTPS cron trigger,
    │  requires the app reachable at a public TARGET_URL. Untracked, current NAS setup.
-   └─ Local worker (worker/reminder-worker.ts, croner + systemd, see
-      systemd/ems-reminder-worker.service) — outbound-only call to localhost/LAN,
-      no public inbound exposure needed. Works behind a firewall (planned gov-agency
-      deployment). Both triggers are safe to run in parallel — see idempotency below.
+   └─ Local worker (worker/reminder-worker.ts, run-once, triggered every 1 min by
+      systemd/ems-reminder-check.timer + .service) — outbound-only call to
+      localhost/LAN, no public inbound exposure needed. Works behind a firewall
+      (planned gov-agency deployment). Both triggers are safe to run in parallel —
+      see cron lock below.
   ▼
 [API] isAuthorized (timing-safe secret compare)
+  │ acquireLock('reminders', holder) via CronLock — skips the whole run (no double
+  │ execution) if a previous run is still in progress; self-heals a stale lock left
+  │ by a crashed process after 5 min (src/lib/cron-lock.ts)
+  │ CronExecutionLog row created (status: running → success/error, checked/sent/
+  │ failed counts, error message) — persisted history, not just text log files
   │ task.findMany({reminderAt: {lte: now}, reminderSentAt: null, archivedAt: null})
   │ (plus analogous passes for reminderDayBeforeAt/reminderOnDayAt)
   │ for each: atomic updateMany claim (reminderSentAt: null → now) before sending,
   │           so concurrent scheduler calls never double-send
   │ sendLineGroupMessage(buildReminderMessage(task))
+  │ releaseLock('reminders') in finally
   ▼
 [LINE group] receives push notification
 ```
 Setup helper: `/api/line/webhook` — invite the bot to the target LINE group, send
 any message, the bot replies with that group's ID to paste into `LINE_GROUP_ID`.
+
+**Health check:** `worker/cron-healthcheck.ts`, triggered every 5 min by
+`systemd/ems-cron-healthcheck.timer` — reads the latest `CronExecutionLog` row for
+job `reminders`; if none in the last 5 min, sends a LINE alert (same group) with a
+30-min file-based cooldown (`logs/cron-alert-state.json`) to avoid spamming. Does not
+cover the case where systemd/timers die entirely on the host — that gap is only
+closed by the optional healthchecks.io dead-man's-switch ping (unconfigured).
 
 ### Authentication Flow (password + mandatory 2FA)
 ```

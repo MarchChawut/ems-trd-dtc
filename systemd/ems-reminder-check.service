@@ -1,5 +1,5 @@
 # ==================================================
-# EMS Task Reminder Worker (LINE OA via croner)
+# EMS Task Reminder Check (LINE OA) - oneshot, triggered by ems-reminder-check.timer
 # ==================================================
 # ก่อนใช้งาน ต้องแก้ค่าต่อไปนี้ให้ตรงกับเครื่องจริง:
 #   - WorkingDirectory / ExecStart: path จริงบน NAS (Synology DSM ติดตั้ง Node/npm
@@ -11,28 +11,26 @@
 #     journalctl แบบถาวรให้ service ทั่วไป ต้องตัด log เองด้วย
 #     systemd/rotate-worker-log.sh (ตั้งเป็น Synology Task Scheduler รายสัปดาห์)
 #
-# ติดตั้งและเปิดใช้งาน:
-#   mkdir -p /volume1/web/ems-admin/logs
-#   sudo cp systemd/ems-reminder-worker.service /etc/systemd/system/
+# unit นี้เป็น Type=oneshot ไม่มี Restart= — ตัวจับเวลาทำโดย
+# systemd/ems-reminder-check.timer (ทุก 1 นาที) ไม่ใช่ persistent process ที่ schedule
+# ตัวเองเหมือนเวอร์ชันก่อนหน้า (ems-reminder-worker.service เดิม ถูกลบไปแล้ว)
+#
+# ติดตั้งและเปิดใช้งาน (ดูรายละเอียดเต็มใน systemd/deploy.sh):
+#   sudo cp systemd/ems-reminder-check.service systemd/ems-reminder-check.timer /etc/systemd/system/
 #   sudo systemctl daemon-reload
-#   sudo systemctl enable --now ems-reminder-worker
+#   sudo systemctl enable --now ems-reminder-check.timer
 #   tail -f /volume1/web/ems-admin/logs/worker.log
 
 [Unit]
-Description=EMS Task Reminder Worker (LINE OA via croner)
+Description=EMS Task Reminder Check (oneshot, triggered by ems-reminder-check.timer)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=oneshot
 WorkingDirectory=/volume1/web/ems-admin
 User=CHANGE_ME
 ExecStart=/usr/local/bin/npm run worker:reminders
-Restart=always
-RestartSec=5
 Environment=NODE_ENV=production
 StandardOutput=append:/volume1/web/ems-admin/logs/worker.log
 StandardError=append:/volume1/web/ems-admin/logs/worker.log
-
-[Install]
-WantedBy=multi-user.target

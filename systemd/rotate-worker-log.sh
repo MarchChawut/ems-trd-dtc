@@ -1,6 +1,6 @@
 #!/bin/sh
 # ==================================================
-# ตัด log ของ ems-reminder-worker ไม่ให้ไฟล์บวมไม่รู้จบ
+# ตัด log ของ ems-reminder-check / ems-cron-healthcheck (worker.log ไฟล์เดียวกัน) ไม่ให้ไฟล์บวมไม่รู้จบ
 # ==================================================
 # ตั้งเป็น Synology Task Scheduler รายสัปดาห์:
 #   DSM > Control Panel > Task Scheduler > Create > Scheduled Task > User-defined script
