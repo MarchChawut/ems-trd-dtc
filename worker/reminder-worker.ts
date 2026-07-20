@@ -1,11 +1,12 @@
 /**
  * ==================================================
- * Local Reminder Worker (croner + systemd)
+ * Reminder Check (run-once, triggered by systemd timer)
  * ==================================================
- * โปรเซสค้างสถานะที่ตั้งเวลาด้วย croner ยิง GET ไปที่ /api/cron/reminders
- * ของแอปเองผ่าน LAN/localhost (ไม่ต้องเปิด inbound จากอินเทอร์เน็ต) เพื่อให้ทำงาน
- * ได้ทั้งบน Synology NAS ปัจจุบัน และเมื่อย้ายไปอยู่หลังไฟร์วอลล์ของหน่วยงานราชการ
- * ในอนาคต ควบคุมการรันด้วย systemd (ดู systemd/ems-reminder-worker.service)
+ * รันครั้งเดียวแล้วจบ ยิง GET ไปที่ /api/cron/reminders ของแอปเองผ่าน
+ * LAN/localhost (ไม่ต้องเปิด inbound จากอินเทอร์เน็ต) เพื่อให้ทำงานได้ทั้งบน
+ * Synology NAS ปัจจุบัน และเมื่อย้ายไปอยู่หลังไฟร์วอลล์ของหน่วยงานราชการในอนาคต
+ * การตั้งเวลาทุก 1 นาทีทำโดย systemd timer (ดู systemd/ems-reminder-check.timer)
+ * ไม่ได้ schedule ตัวเองในโปรเซสเหมือนเดิม
  *
  * รันด้วยมือ:   npm run worker:reminders
  *
@@ -14,13 +15,11 @@
  * token / JWT secret เหมือน .env เต็มไฟล์):
  *   CRON_SECRET           (จำเป็น) ต้องตรงกับที่ /api/cron/reminders ใช้ตรวจสอบ
  *   REMINDER_TARGET_URL   (ไม่บังคับ) default http://localhost:3000/api/cron/reminders
- *   REMINDER_CRON_PATTERN (ไม่บังคับ) default "* * * * *" (ทุก 1 นาที)
  *   HEALTHCHECK_PING_URL  (ไม่บังคับ) Healthchecks.io ping URL สำหรับ dead man's switch
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Cron } from 'croner';
 import { logger } from '../src/lib/logger';
 
 // โหลด env แบบ manual (ไม่พึ่ง dotenv) — ลอง worker/.env.worker ก่อน แล้ว fallback .env
@@ -40,7 +39,6 @@ loadEnvFile(path.resolve(__dirname, '../.env'));
 
 const TARGET_URL = process.env.REMINDER_TARGET_URL ?? 'http://localhost:3000/api/cron/reminders';
 const CRON_SECRET = process.env.CRON_SECRET;
-const CRON_PATTERN = process.env.REMINDER_CRON_PATTERN ?? '* * * * *';
 const HEALTHCHECK_PING_URL = process.env.HEALTHCHECK_PING_URL;
 
 if (!CRON_SECRET) {
@@ -55,7 +53,7 @@ function pingHealthcheck(suffix: '' | '/fail'): void {
   });
 }
 
-async function runReminderCheck(): Promise<void> {
+async function runReminderCheck(): Promise<boolean> {
   try {
     const response = await fetch(TARGET_URL, {
       method: 'GET',
@@ -67,10 +65,10 @@ async function runReminderCheck(): Promise<void> {
     if (!response.ok) {
       logger.error('reminder heartbeat: request ไม่สำเร็จ', { status: response.status, body });
       pingHealthcheck('/fail');
-      return;
+      return false;
     }
 
-    let parsed: { checked?: number; sent?: number; failed?: number } = {};
+    let parsed: { checked?: number; sent?: number; failed?: number; skipped?: boolean } = {};
     try {
       parsed = JSON.parse(body);
     } catch {
@@ -79,14 +77,17 @@ async function runReminderCheck(): Promise<void> {
 
     logger.info('reminder heartbeat', {
       status: response.status,
+      skipped: parsed.skipped ?? false,
       checked: parsed.checked ?? null,
       sent: parsed.sent ?? null,
       failed: parsed.failed ?? null,
     });
     pingHealthcheck('');
+    return true;
   } catch (error) {
     logger.error('reminder heartbeat: fetch ล้มเหลว', { error, target: TARGET_URL });
     pingHealthcheck('/fail');
+    return false;
   }
 }
 
@@ -103,7 +104,11 @@ function checkTimezone(): void {
 }
 
 checkTimezone();
-logger.info('reminder-worker started', { pattern: CRON_PATTERN, target: TARGET_URL });
+logger.info('reminder-worker: เริ่มตรวจสอบ (run-once)', { target: TARGET_URL });
 
-runReminderCheck();
-new Cron(CRON_PATTERN, { timezone: 'Asia/Bangkok' }, runReminderCheck);
+runReminderCheck()
+  .then((ok) => process.exit(ok ? 0 : 1))
+  .catch((error) => {
+    logger.error('reminder-worker: unhandled error', { error });
+    process.exit(1);
+  });

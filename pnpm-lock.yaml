@@ -56,9 +56,6 @@ importers:
       clsx:
         specifier: ^2.0.0
         version: 2.1.1
-      croner:
-        specifier: ^8.1.2
-        version: 8.1.2
       dompurify:
         specifier: ^3.0.6
         version: 3.3.1
@@ -89,6 +86,9 @@ importers:
       otplib:
         specifier: ^13.4.1
         version: 13.4.1
+      prisma:
+        specifier: ^5.7.0
+        version: 5.22.0
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -100,13 +100,16 @@ importers:
         version: 19.2.4(react@19.2.4)
       recharts:
         specifier: ^3.7.0
-        version: 3.7.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@16.13.1)(react@19.2.4)(redux@5.0.1)
+        version: 3.7.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@17.0.2)(react@19.2.4)(redux@5.0.1)
       tailwind-merge:
         specifier: ^2.2.0
         version: 2.6.1
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.19(tsx@4.21.0))
+      tsx:
+        specifier: ^4.7.0
+        version: 4.21.0
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
@@ -159,18 +162,12 @@ importers:
       postcss:
         specifier: ^8.4.32
         version: 8.5.6
-      prisma:
-        specifier: ^5.7.0
-        version: 5.22.0
       tailwindcss:
         specifier: ^3.4.0
         version: 3.4.19(tsx@4.21.0)
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@22.19.11)(typescript@5.9.3)
-      tsx:
-        specifier: ^4.7.0
-        version: 4.21.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1899,10 +1896,6 @@ packages:
 
   create-require@1.1.1:
     resolution: {integrity: sha512-dcKFX3jn0MpIaXjisoRvexIJVEKzaq7z2rZKxf+MSr9TkdmHmsU4m2lcLojrj/FHl8mk5VxMmYA+ftRkP/3oKQ==}
-
-  croner@8.1.2:
-    resolution: {integrity: sha512-ypfPFcAXHuAZRCzo3vJL6ltENzniTjwe/qsLleH1V2/7SRDjgvRQyrLmumFTLmjFax4IuSxfGXEn79fozXcJog==}
-    engines: {node: '>=18.0'}
 
   crypto-js@4.2.0:
     resolution: {integrity: sha512-KALDyEYgpY+Rlob/iriUtjV6d5Eq+Y191A5g4UqLAi8CyGP9N1+FdVbkc1SxKc2r4YAYqG8JzO2KGL+AizD70Q==}
@@ -5249,8 +5242,6 @@ snapshots:
 
   create-require@1.1.1: {}
 
-  croner@8.1.2: {}
-
   crypto-js@4.2.0: {}
 
   css-tree@3.1.0:
@@ -6329,7 +6320,7 @@ snapshots:
     dependencies:
       picomatch: 2.3.1
 
-  recharts@3.7.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@16.13.1)(react@19.2.4)(redux@5.0.1):
+  recharts@3.7.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@17.0.2)(react@19.2.4)(redux@5.0.1):
     dependencies:
       '@reduxjs/toolkit': 2.11.2(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
       clsx: 2.1.1
@@ -6339,7 +6330,7 @@ snapshots:
       immer: 10.2.0
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
-      react-is: 16.13.1
+      react-is: 17.0.2
       react-redux: 9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1)
       reselect: 5.1.1
       tiny-invariant: 1.3.3

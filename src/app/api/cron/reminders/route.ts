@@ -12,9 +12,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import os from 'os';
 import { prisma } from '@/lib/prisma';
 import { sendLineGroupMessage } from '@/lib/line';
 import { logger } from '@/lib/logger';
+import { acquireLock, releaseLock } from '@/lib/cron-lock';
+
+const JOB_NAME = 'reminders';
 
 function isAuthorized(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -192,19 +196,47 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
 
+  const holder = `${os.hostname()}:${process.pid}`;
+  const acquired = await acquireLock(JOB_NAME, holder);
+  if (!acquired) {
+    logger.warn('reminder cron: ข้าม เพราะยังมีอีก run กำลังทำงานอยู่', { holder });
+    return NextResponse.json({ success: true, skipped: true, message: 'ยังมีอีก run กำลังทำงานอยู่' });
+  }
+
   const now = new Date();
-
-  const [exact, dayBefore, onDay] = await Promise.all([
-    processExactReminders(now),
-    processDayBeforeReminders(now),
-    processOnDayReminders(now),
-  ]);
-
-  return NextResponse.json({
-    success: true,
-    checked: exact.checked + dayBefore.checked + onDay.checked,
-    sent: exact.sent + dayBefore.sent + onDay.sent,
-    failed: exact.failed + dayBefore.failed + onDay.failed,
-    breakdown: { exact, dayBefore, onDay },
+  const logEntry = await prisma.cronExecutionLog.create({
+    data: { jobName: JOB_NAME, startedAt: now, status: 'running' },
   });
+
+  try {
+    const [exact, dayBefore, onDay] = await Promise.all([
+      processExactReminders(now),
+      processDayBeforeReminders(now),
+      processOnDayReminders(now),
+    ]);
+
+    const checked = exact.checked + dayBefore.checked + onDay.checked;
+    const sent = exact.sent + dayBefore.sent + onDay.sent;
+    const failed = exact.failed + dayBefore.failed + onDay.failed;
+
+    await prisma.cronExecutionLog.update({
+      where: { id: logEntry.id },
+      data: { finishedAt: new Date(), status: 'success', checked, sent, failed },
+    });
+
+    return NextResponse.json({ success: true, checked, sent, failed, breakdown: { exact, dayBefore, onDay } });
+  } catch (error) {
+    await prisma.cronExecutionLog.update({
+      where: { id: logEntry.id },
+      data: {
+        finishedAt: new Date(),
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+    logger.error('reminder cron run ล้มเหลว', { error });
+    return NextResponse.json({ success: false, message: 'Internal error' }, { status: 500 });
+  } finally {
+    await releaseLock(JOB_NAME);
+  }
 }

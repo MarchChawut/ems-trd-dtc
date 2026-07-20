@@ -226,6 +226,36 @@ model Task {
 }
 
 // ============================================
+// Model: CronLock - ป้องกัน cron job รันซ้อนกัน (atomic claim, self-healing)
+// ============================================
+model CronLock {
+  name      String    @id @db.VarChar(64) // ชื่อ job เช่น "reminders"
+  lockedAt  DateTime? // เวลาที่ถือ lock อยู่ (null = ว่าง)
+  lockedBy  String?   @db.VarChar(128) // hostname:pid ของ process ที่ถือ lock (สำหรับ debug)
+  updatedAt DateTime  @updatedAt
+
+  @@map("cron_locks")
+}
+
+// ============================================
+// Model: CronExecutionLog - ประวัติการรัน cron job แต่ละครั้ง
+// ============================================
+model CronExecutionLog {
+  id         Int       @id @default(autoincrement())
+  jobName    String    @db.VarChar(64) // "reminders"
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  status     String    @db.VarChar(16) // "running" | "success" | "error"
+  checked    Int       @default(0)
+  sent       Int       @default(0)
+  failed     Int       @default(0)
+  error      String?   @db.Text
+
+  @@index([jobName, startedAt])
+  @@map("cron_execution_logs")
+}
+
+// ============================================
 // Model: Leave - รายการลาของพนักงาน
 // ============================================
 model Leave {

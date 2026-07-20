@@ -142,4 +142,90 @@ describe('GET /api/cron/reminders', () => {
     expect(body.breakdown.exact.failed).toBe(1);
     expect(body.breakdown.exact.sent).toBe(0);
   });
+
+  it('records a CronExecutionLog row with status success and the correct counts', async () => {
+    const user = await createTestUser('EMPLOYEE');
+    const column = await prisma.kanbanColumn.findFirstOrThrow();
+    await prisma.task.create({
+      data: {
+        title: 'Logged run', priority: 'LOW', columnId: column.id, assigneeId: user.id,
+        reminderAt: new Date(Date.now() - 1000),
+      },
+    });
+
+    const res = await GET(req('test-cron-secret-not-real'));
+    expect(res.status).toBe(200);
+
+    const logs = await prisma.cronExecutionLog.findMany({ where: { jobName: 'reminders' } });
+    expect(logs).toHaveLength(1);
+    expect(logs[0].status).toBe('success');
+    expect(logs[0].checked).toBe(1);
+    expect(logs[0].sent).toBe(1);
+    expect(logs[0].failed).toBe(0);
+    expect(logs[0].finishedAt).not.toBeNull();
+
+    // lock ต้องถูกปล่อยหลังรันเสร็จ - รันซ้ำต้องทำงานได้ปกติอีกครั้ง ไม่ถูก skip
+    const res2 = await GET(req('test-cron-secret-not-real'));
+    const body2 = await res2.json();
+    expect(body2.skipped).toBeFalsy();
+  });
+
+  it('skips the run and does not create a log row when the lock is already held', async () => {
+    await prisma.cronLock.upsert({
+      where: { name: 'reminders' },
+      create: { name: 'reminders', lockedAt: new Date(), lockedBy: 'other-process' },
+      update: { lockedAt: new Date(), lockedBy: 'other-process' },
+    });
+
+    const res = await GET(req('test-cron-secret-not-real'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.skipped).toBe(true);
+
+    const logs = await prisma.cronExecutionLog.findMany({ where: { jobName: 'reminders' } });
+    expect(logs).toHaveLength(0);
+    expect(vi.mocked(sendLineGroupMessage)).not.toHaveBeenCalled();
+  });
+
+  it('records status error with a message and still releases the lock when a pass throws', async () => {
+    vi.mocked(sendLineGroupMessage).mockRejectedValueOnce(new Error('LINE API unreachable'));
+    const user = await createTestUser('EMPLOYEE');
+    const column = await prisma.kanbanColumn.findFirstOrThrow();
+    await prisma.task.create({
+      data: {
+        title: 'Throws during send', priority: 'LOW', columnId: column.id, assigneeId: user.id,
+        reminderAt: new Date(Date.now() - 1000),
+      },
+    });
+
+    const res = await GET(req('test-cron-secret-not-real'));
+    expect(res.status).toBe(500);
+
+    const logs = await prisma.cronExecutionLog.findMany({ where: { jobName: 'reminders' } });
+    expect(logs).toHaveLength(1);
+    expect(logs[0].status).toBe('error');
+    expect(logs[0].error).toContain('LINE API unreachable');
+    expect(logs[0].finishedAt).not.toBeNull();
+
+    // lock ต้องถูกปล่อยแม้ตอน error (finally) - รันซ้ำต้องไม่ถูก skip
+    const res2 = await GET(req('test-cron-secret-not-real'));
+    const body2 = await res2.json();
+    expect(body2.skipped).toBeFalsy();
+  });
+
+  it('self-heals a stale lock left by a crashed previous run', async () => {
+    const stale = new Date(Date.now() - 6 * 60 * 1000); // เกิน 5 นาที stale threshold
+    await prisma.cronLock.upsert({
+      where: { name: 'reminders' },
+      create: { name: 'reminders', lockedAt: stale, lockedBy: 'crashed-process' },
+      update: { lockedAt: stale, lockedBy: 'crashed-process' },
+    });
+
+    const res = await GET(req('test-cron-secret-not-real'));
+    const body = await res.json();
+    expect(body.skipped).toBeFalsy();
+
+    const logs = await prisma.cronExecutionLog.findMany({ where: { jobName: 'reminders' } });
+    expect(logs).toHaveLength(1);
+  });
 });
