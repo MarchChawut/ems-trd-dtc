@@ -16,10 +16,18 @@
     "db:import-assets": "tsx scripts/import-assets.ts",
     "db:migrate-uploads": "tsx scripts/migrate-uploads-to-db.ts",
     "db:fix-leave-years": "tsx scripts/fix-leave-buddhist-years.ts",
+    "db:fix-document-years": "tsx scripts/fix-document-buddhist-years.ts",
     "db:fix-html-entities": "tsx scripts/fix-html-entity-escaped-text.ts",
     "db:backup": "tsx scripts/backup.ts",
     "db:backup:list": "tsx scripts/backup.ts list",
-    "db:restore": "tsx scripts/backup.ts restore"
+    "db:restore": "tsx scripts/backup.ts restore",
+    "worker:reminders": "tsx worker/reminder-worker.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:db:up": "docker compose -f docker-compose.test.yml up -d",
+    "test:db:down": "docker compose -f docker-compose.test.yml down -v",
+    "test:all": "pnpm test:db:up && pnpm test && pnpm test:e2e && pnpm test:db:down"
   },
   "dependencies": {
     "@prisma/client": "^5.7.0",
@@ -38,6 +46,7 @@
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
+    "croner": "^8.1.2",
     "dompurify": "^3.0.6",
     "exceljs": "^4.4.0",
     "express-rate-limit": "^7.1.5",
@@ -58,6 +67,10 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/dompurify": "^3.0.5",
     "@types/jsonwebtoken": "^9.0.5",
@@ -65,13 +78,17 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "^10.4.16",
+    "jsdom": "^29.1.1",
     "postcss": "^8.4.32",
     "prisma": "^5.7.0",
     "tailwindcss": "^3.4.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.7.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.10"
   },
   "prisma": {
     "seed": "node dist-seed/prisma/seed.js"
