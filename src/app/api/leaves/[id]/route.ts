@@ -11,6 +11,8 @@ import { createLeaveSchema } from '@/lib/security';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import { toSafeGregorianDate } from '@/lib/utils';
+import { calculateLeaveDays } from '@/lib/leave-calc';
+import { getEffectiveLeaveRule } from '@/lib/leave-rules-server';
 
 /**
  * PUT /api/leaves/[id]
@@ -83,39 +85,21 @@ export async function PUT(
 
     const { type, startDate, endDate, reason, isHalfDay, hours, outTime, backTime, formCategory, contactAddress } = validationResult.data;
 
-    // คำนวณจำนวนวันลา
-    let totalDays = 0;
-    if (hours && hours > 0) {
-      totalDays = hours <= 3 ? 0.5 : 1;
-    } else if (isHalfDay) {
-      totalDays = 0.5;
-    } else {
-      const start = toSafeGregorianDate(startDate);
-      const end = toSafeGregorianDate(endDate);
+    // คำนวณจำนวนวันลา (ใช้กฎการลาที่มีผลกับปีงบประมาณของ startDate)
+    const start = toSafeGregorianDate(startDate);
+    const end = toSafeGregorianDate(endDate);
 
-      let holidays: Date[] = [];
-      try {
-        const holidayRecords = await prisma.holiday.findMany({
-          where: { isActive: true, date: { gte: start, lte: end } },
-          select: { date: true },
-        });
-        holidays = holidayRecords.map((h: { date: Date }) => h.date);
-      } catch {}
+    let holidays: { date: Date }[] = [];
+    try {
+      const holidayRecords = await prisma.holiday.findMany({
+        where: { isActive: true, date: { gte: start, lte: end } },
+        select: { date: true },
+      });
+      holidays = holidayRecords;
+    } catch {}
 
-      const current = new Date(start);
-      while (current <= end) {
-        const dayOfWeek = current.getDay();
-        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-          const isHoliday = holidays.some(h =>
-            h.getFullYear() === current.getFullYear() &&
-            h.getMonth() === current.getMonth() &&
-            h.getDate() === current.getDate()
-          );
-          if (!isHoliday) totalDays++;
-        }
-        current.setDate(current.getDate() + 1);
-      }
-    }
+    const leaveRule = await getEffectiveLeaveRule(start);
+    const totalDays = calculateLeaveDays(start, end, isHalfDay ?? false, hours, holidays, leaveRule);
 
     const leave = await prisma.leave.update({
       where: { id: leaveId },

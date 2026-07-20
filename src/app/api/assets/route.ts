@@ -27,6 +27,12 @@ export async function GET(request: NextRequest) {
     const department = searchParams.get('department');
     const search = searchParams.get('search');
 
+    // แบ่งหน้าแบบ opt-in: ใช้เฉพาะเมื่อมีการส่ง page หรือ limit มาจริง
+    // (ไม่ส่งมา = คืน array เต็มเหมือนเดิม เพื่อไม่ให้ dropdown/ตารางเดิมพัง)
+    const hasPagination = searchParams.has('page') || searchParams.has('limit');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '50') || 50));
+
     const where: any = { isActive: true };
     if (status) where.status = status;
     if (categoryId) where.categoryId = parseInt(categoryId);
@@ -42,21 +48,29 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const assets = await prisma.asset.findMany({
-      where,
-      include: {
-        category: { select: { id: true, name: true } },
-        currentHolder: { select: { id: true, prefix: true, name: true, avatar: true } },
-      },
-      orderBy: { name: 'asc' },
-    });
+    const [assets, total] = await Promise.all([
+      prisma.asset.findMany({
+        where,
+        include: {
+          category: { select: { id: true, name: true } },
+          currentHolder: { select: { id: true, prefix: true, name: true, avatar: true } },
+        },
+        orderBy: { name: 'asc' },
+        ...(hasPagination ? { skip: (page - 1) * limit, take: limit } : {}),
+      }),
+      prisma.asset.count({ where }),
+    ]);
 
     const data = assets.map(a => ({
       ...a,
       acquisitionCost: a.acquisitionCost ? Number(a.acquisitionCost) : null,
     }));
 
-    return NextResponse.json({ success: true, data, meta: { total: data.length } });
+    return NextResponse.json({
+      success: true,
+      data,
+      meta: hasPagination ? { total, page, limit, hasMore: page * limit < total } : { total },
+    });
   } catch (error) {
     logger.error('Get assets error', { error });
     return NextResponse.json(

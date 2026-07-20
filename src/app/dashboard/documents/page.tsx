@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, Search, Download, Loader2, X, Inbox } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { DocumentRegister, DocumentDirection, DocumentCategory, UserRole, User } from '@/types';
+import { cn, safeGetGregorianYear } from '@/lib/utils';
+import { DocumentRegister, DocumentDirection, DocumentCategory, User } from '@/types';
+import { useCurrentUser } from '@/contexts/UserContext';
 
 // ============================================
 // Config
@@ -30,7 +31,12 @@ const OTHER_SENTINEL = '__OTHER__';
 
 function formatDate(d: Date | string | null | undefined) {
   if (!d) return '-';
-  return new Date(d).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+  const date = new Date(d);
+  const correctedYear = safeGetGregorianYear(date);
+  if (correctedYear !== date.getFullYear()) {
+    date.setFullYear(correctedYear);
+  }
+  return date.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 function toDateInputValue(d: Date | string | null | undefined) {
@@ -66,11 +72,11 @@ function defaultDocumentForm() {
 // ============================================
 
 export default function DocumentsPage() {
+  const { role: userRole } = useCurrentUser();
   const [documents, setDocuments] = useState<DocumentRegister[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<UserRole>('EMPLOYEE');
   const [searchQuery, setSearchQuery] = useState('');
   const [directionFilter, setDirectionFilter] = useState<DocumentDirection | ''>('');
   const [categoryFilter, setCategoryFilter] = useState<DocumentCategory | ''>('');
@@ -103,16 +109,13 @@ export default function DocumentsPage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [sessionRes, docsRes, usersRes] = await Promise.all([
-        fetch('/api/auth/session'),
+      const [docsRes, usersRes] = await Promise.all([
         fetch('/api/documents'),
         fetch('/api/users?isActive=true'),
       ]);
-      const sessionData = await sessionRes.json();
       const docsData = await docsRes.json();
       const usersData = await usersRes.json();
 
-      if (sessionData.success) setUserRole(sessionData.data.user.role);
       if (docsData.success) setDocuments(docsData.data);
       if (usersData.success) setUsers(usersData.data);
     } catch {
@@ -408,7 +411,7 @@ export default function DocumentsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">ประเภทของหนังสือ *</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {(Object.entries(DOCUMENT_CATEGORY_CONFIG) as [DocumentCategory, typeof DOCUMENT_CATEGORY_CONFIG[DocumentCategory]][]).map(([cat, cfg]) => (
                     <button key={cat} type="button" onClick={() => setFormData(p => ({ ...p, category: cat }))}
                       className={cn('py-2 rounded-lg border text-sm font-medium transition-colors',
@@ -421,7 +424,7 @@ export default function DocumentsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">ทิศทาง *</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {(Object.entries(DIRECTION_CONFIG) as [DocumentDirection, typeof DIRECTION_CONFIG[DocumentDirection]][]).map(([dir, cfg]) => (
                     <button key={dir} type="button" onClick={() => setFormData(p => ({ ...p, direction: dir }))}
                       className={cn('py-2 rounded-lg border text-sm font-medium transition-colors',
@@ -432,7 +435,7 @@ export default function DocumentsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">วันที่ *</label>
                   <input required type="date" value={formData.date} onChange={e => setFormData(p => ({ ...p, date: e.target.value }))}
@@ -451,7 +454,7 @@ export default function DocumentsPage() {
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ระบุเรื่อง" />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">ชื่อผู้ส่ง</label>
                   <select value={formData.senderChoice}
@@ -525,7 +528,7 @@ export default function DocumentsPage() {
             <div className="p-5 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">ช่วงเวลา</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {([['day', 'วันนี้'], ['week', 'สัปดาห์นี้'], ['month', 'เดือนนี้'], ['custom', 'กำหนดเอง']] as const).map(([val, label]) => (
                     <button key={val} onClick={() => setExportPeriod(val)}
                       className={cn('py-2 rounded-lg border text-sm font-medium transition-colors',
@@ -540,7 +543,7 @@ export default function DocumentsPage() {
               </div>
 
               {exportPeriod === 'custom' && (
-                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg">
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">จากวันที่</label>
                     <input type="date" value={exportStartDate} onChange={e => setExportStartDate(e.target.value)}
@@ -556,7 +559,7 @@ export default function DocumentsPage() {
 
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">ทิศทาง</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {([['all', 'ทั้งหมด'], ['RECEIVE', 'หนังสือเข้า'], ['SEND', 'หนังสือออก']] as const).map(([val, label]) => (
                     <button key={val} onClick={() => setExportDirection(val)}
                       className={cn('py-2 rounded-lg border text-sm font-medium transition-colors',

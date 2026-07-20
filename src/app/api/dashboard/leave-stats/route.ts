@@ -44,40 +44,6 @@ function getFiscalYearRange(date: Date): { start: Date; end: Date; fiscalStartYe
 }
 
 /**
- * คำนวณจำนวนวันทำการ (ไม่รวมเสาร์-อาทิตย์ และวันหยุดหน่วยงาน)
- */
-function calculateBusinessDays(
-  startDate: Date,
-  endDate: Date,
-  isHalfDay: boolean,
-  hours: number | null,
-  holidays: Date[],
-): number {
-  if (hours && hours > 0) {
-    return hours <= 3 ? 0.5 : 1;
-  }
-  if (isHalfDay) return 0.5;
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  let count = 0;
-  const current = new Date(start);
-
-  while (current <= end) {
-    const dayOfWeek = current.getDay();
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      const dateStr = current.toISOString().split('T')[0];
-      const isOrgHoliday = holidays.some(
-        (h) => new Date(h).toISOString().split('T')[0] === dateStr,
-      );
-      if (!isOrgHoliday) count++;
-    }
-    current.setDate(current.getDate() + 1);
-  }
-  return count;
-}
-
-/**
  * GET /api/dashboard/leave-stats
  *
  * Query Parameters:
@@ -175,35 +141,6 @@ export async function GET(request: NextRequest) {
       orderBy: { startDate: 'asc' },
     });
 
-    // ดึงวันหยุดหน่วยงาน (รองรับทั้ง ค.ศ. และ พ.ศ.)
-    let holidays: Date[] = [];
-    try {
-      const beFiscalStart = new Date(fiscalRange.start.getFullYear() + 543, fiscalRange.start.getMonth(), fiscalRange.start.getDate());
-      const beFiscalEnd = new Date(fiscalRange.end.getFullYear() + 543, fiscalRange.end.getMonth(), fiscalRange.end.getDate(), 23, 59, 59);
-
-      const orgHolidays = await (prisma as any).holiday.findMany({
-        where: {
-          OR: [
-            {
-              date: {
-                gte: fiscalRange.start,
-                lte: fiscalRange.end,
-              },
-            },
-            {
-              date: {
-                gte: beFiscalStart,
-                lte: beFiscalEnd,
-              },
-            },
-          ],
-        },
-      });
-      holidays = orgHolidays.map((h: any) => h.date);
-    } catch {
-      // holiday table อาจยังไม่มี
-    }
-
     // Thai month names
     const thaiMonths = [
       'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
@@ -259,13 +196,8 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      const days = calculateBusinessDays(
-        leave.startDate,
-        leave.endDate,
-        leave.isHalfDay,
-        leave.hours,
-        holidays,
-      );
+      // ใช้ totalDays ที่บันทึกไว้ตอนสร้าง/แก้ไขรายการลา (คำนวณครั้งเดียวด้วยกฎที่มีผล ณ ตอนนั้น)
+      const days = leave.totalDays;
 
       const startMonth = new Date(leave.startDate).getMonth();
       const startYear = safeGetGregorianYear(new Date(leave.startDate));

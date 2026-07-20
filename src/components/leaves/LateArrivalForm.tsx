@@ -11,25 +11,15 @@ import React, { useRef, useState } from "react";
 import { Printer, X, FileDown, Loader2 } from "lucide-react";
 import { Leave, User } from "@/types";
 import { formatSignatureName } from "@/lib/utils";
+import { getFiscalYearRange } from "@/lib/leave-calc";
 import type { LateArrivalStats } from "./LateArrivalFormPDF";
 
 interface LateArrivalFormProps {
   leave: Leave & { user: User };
   userLeaves?: Leave[];
+  /** ผู้อำนวยการกอง (role DIRECTOR) ที่ยัง active อยู่ - ใช้พิมพ์ชื่อ/ตำแหน่งล่วงหน้าในช่องลงนาม */
+  director?: User | null;
   onClose: () => void;
-}
-
-/**
- * คำนวณช่วงปีงบประมาณ (1 ต.ค. - 30 ก.ย.)
- */
-function getFiscalYearRange(date: Date): { start: Date; end: Date } {
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const fiscalStartYear = month >= 9 ? year : year - 1;
-  return {
-    start: new Date(fiscalStartYear, 9, 1),
-    end: new Date(fiscalStartYear + 1, 8, 30),
-  };
 }
 
 const thaiMonths = [
@@ -53,6 +43,7 @@ const REASON_PREFIX_RE =
 export default function LateArrivalForm({
   leave,
   userLeaves = [],
+  director = null,
   onClose,
 }: LateArrivalFormProps) {
   const printRef = useRef<HTMLDivElement>(null);
@@ -87,6 +78,10 @@ export default function LateArrivalForm({
   const requestDate = formatThaiDate(leave.startDate);
   const reason = (leave.reason || "").replace(REASON_PREFIX_RE, "");
   const sig = formatSignatureName((leave.user as any).prefix, leave.user.name);
+  const directorSig = director
+    ? formatSignatureName(director.prefix, director.name)
+    : { linePrefix: 'พ.อ.', parenName: 'ปรียพงศ์  สามิภักดิ์' };
+  const directorPosition = director?.position || 'ผู้อำนวยการกองการศึกษา วิจัย และพัฒนา';
 
   const handlePrint = () => {
     const printContent = printRef.current;
@@ -147,7 +142,7 @@ export default function LateArrivalForm({
       setIsGeneratingPDF(true);
       const { generateLateArrivalPDF } = await import("./LateArrivalFormPDF");
       await import("./pdf-fonts");
-      const blob = await generateLateArrivalPDF(leave, stats);
+      const blob = await generateLateArrivalPDF(leave, stats, director);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -388,12 +383,12 @@ export default function LateArrivalForm({
                       ไม่อนุญาต
                     </span>
                   </div>
-                  <div style={{ marginTop: "2mm", display: "flex", paddingLeft: "10mm", marginBottom: "1mm" }}>พ.อ.</div>
+                  <div style={{ marginTop: "2mm", display: "flex", paddingLeft: "10mm", marginBottom: "1mm" }}>{directorSig.linePrefix}</div>
                   <div style={{display: "flex", paddingLeft: "6mm", marginBottom: "1mm"}}>
-                    (<span style={dotted("55mm")}>ปรียพงศ์&nbsp;&nbsp;สามิภักดิ์</span>)
+                    (<span style={dotted("55mm")}>{directorSig.parenName}</span>)
                   </div>
                   <div style={{display: "flex", paddingLeft: "3mm", marginBottom: "1mm"}}>
-                    <span style={dotted("55mm")}>ผู้อำนวยการกองการศึกษา วิจัย และพัฒนา</span>
+                    <span style={dotted("55mm")}>{directorPosition}</span>
                   </div>
                   <div style={{ marginTop: "1mm" }}>
                     วันที่<span style={dotted("10mm")}> </span>

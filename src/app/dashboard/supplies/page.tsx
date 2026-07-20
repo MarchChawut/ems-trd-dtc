@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Image from 'next/image';
 import {
   Plus, Search, Download, Loader2, X, Package,
   AlertTriangle, ChevronDown, FileText, History, Tag, Settings
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Supply, SupplyCategory, SupplyTransaction, SupplyType, TransactionType, UserRole, User } from '@/types';
+import { cn, safeGetGregorianYear } from '@/lib/utils';
+import { Supply, SupplyCategory, SupplyTransaction, SupplyType, TransactionType, User } from '@/types';
+import { useCurrentUser } from '@/contexts/UserContext';
 
 // ============================================
 // Config
@@ -30,7 +32,12 @@ const TX_TYPE_LABELS: Record<TransactionType, { label: string; color: string }> 
 
 function formatDate(d: Date | string | null | undefined) {
   if (!d) return '-';
-  return new Date(d).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+  const date = new Date(d);
+  const correctedYear = safeGetGregorianYear(date);
+  if (correctedYear !== date.getFullYear()) {
+    date.setFullYear(correctedYear);
+  }
+  return date.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 function fmtPrice(n: number | null | undefined) {
@@ -63,6 +70,7 @@ async function uploadDocument(file: File): Promise<string | null> {
 // ============================================
 
 export default function SuppliesPage() {
+  const { role: userRole } = useCurrentUser();
   const [supplies, setSupplies] = useState<Supply[]>([]);
   const [categories, setCategories] = useState<SupplyCategory[]>([]);
   const [members, setMembers] = useState<User[]>([]);
@@ -73,7 +81,6 @@ export default function SuppliesPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
-  const [userRole, setUserRole] = useState<UserRole>('EMPLOYEE');
   const [error, setError] = useState<string | null>(null);
 
   // Create/Edit supply modal
@@ -137,7 +144,7 @@ export default function SuppliesPage() {
   const [exportEndDate, setExportEndDate] = useState('');
   const [exportLoading, setExportLoading] = useState(false);
 
-  const canManage = ['MANAGER', 'ADMIN', 'SUPER_ADMIN'].includes(userRole);
+  const canManage = ['MANAGER', 'DIRECTOR', 'ADMIN', 'SUPER_ADMIN'].includes(userRole);
 
   // ----------------------------------------
   // Fetch
@@ -145,22 +152,19 @@ export default function SuppliesPage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [sessionRes, suppliesRes, catsRes, usersRes] = await Promise.all([
-        fetch('/api/auth/session'),
+      const [suppliesRes, catsRes, usersRes] = await Promise.all([
         fetch('/api/supplies'),
         fetch('/api/supply-categories'),
         fetch('/api/users'),
       ]);
-      const sessionData = await sessionRes.json();
       const suppliesData = await suppliesRes.json();
       const catsData = await catsRes.json();
       const usersData = await usersRes.json();
 
-      if (sessionData.success) setUserRole(sessionData.data.user.role);
       if (suppliesData.success) setSupplies(suppliesData.data);
       if (catsData.success) setCategories(catsData.data);
       if (usersData.success) {
-        const roleOrder: Record<string, number> = { SUPER_ADMIN: 0, ADMIN: 1, MANAGER: 2, HR: 3, EMPLOYEE: 4 };
+        const roleOrder: Record<string, number> = { SUPER_ADMIN: 0, ADMIN: 1, MANAGER: 2, DIRECTOR: 3, HR: 4, EMPLOYEE: 5 };
         const sorted = [...usersData.data].sort((a: User, b: User) =>
           (roleOrder[a.role] ?? 5) - (roleOrder[b.role] ?? 5) || a.name.localeCompare(b.name, 'th')
         );
@@ -823,7 +827,7 @@ export default function SuppliesPage() {
                   <td className="py-3 px-4">
                     {s.imageUrl ? (
                       <a href={s.imageUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={s.imageUrl} alt={s.name}
+                        <Image src={s.imageUrl} alt={s.name} width={40} height={40}
                           className="w-10 h-10 rounded-lg object-cover border border-slate-200 hover:opacity-75 transition-opacity" />
                       </a>
                     ) : (
@@ -1007,7 +1011,7 @@ export default function SuppliesPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">หมวดหมู่</label>
                         <select value={formData.categoryId} onChange={e => setFormData(p => ({ ...p, categoryId: e.target.value }))}
@@ -1055,7 +1059,7 @@ export default function SuppliesPage() {
                       <div className="flex-1 h-px bg-slate-100" />
                     </div>
                     <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนขั้นต่ำ</label>
                           <input type="number" min="0" value={formData.minimumQuantity}
@@ -1071,7 +1075,7 @@ export default function SuppliesPage() {
                       </div>
                       <div className="p-3 bg-slate-50 rounded-lg space-y-2">
                         <p className="text-xs font-semibold text-slate-500">เกณฑ์สีสถานะ (%)</p>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="flex items-center gap-1.5 text-xs text-slate-600 mb-1">
                               <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" /> แดง — ต่ำกว่า
@@ -1138,7 +1142,7 @@ export default function SuppliesPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">วันที่เบิกของ</label>
                         <input type="date" value={formData.issueDate as string}
@@ -1345,7 +1349,7 @@ export default function SuppliesPage() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">วันที่เบิก</label>
                   <input type="date" value={issueForm.issueDate}
@@ -1499,7 +1503,7 @@ export default function SuppliesPage() {
               )}
 
               {txForm.type === 'RETURN' && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">ชื่อผู้คืน</label>
                     <select value={txForm.returnerName} onChange={e => setTxForm(p => ({ ...p, returnerName: e.target.value }))}
@@ -1530,7 +1534,7 @@ export default function SuppliesPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">เลขที่เอกสาร</label>
                   <input value={txForm.documentNumber} onChange={e => setTxForm(p => ({ ...p, documentNumber: e.target.value }))}
@@ -1684,7 +1688,7 @@ export default function SuppliesPage() {
             <form onSubmit={handleSaveSettings} className="p-5 space-y-4">
               {settingsError && <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-600">{settingsError}</div>}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">จำนวนขั้นต่ำ</label>
                   <input type="number" min="0" value={settingsForm.minimumQuantity}
@@ -1701,7 +1705,7 @@ export default function SuppliesPage() {
 
               <div className="space-y-3">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">เกณฑ์สีคงเหลือ (% ของขั้นต่ำ)</p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">
                       <span className="inline-block w-3 h-3 rounded-full bg-red-500 mr-1 align-middle"></span>
@@ -1799,7 +1803,7 @@ export default function SuppliesPage() {
               {/* Period selector */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">ช่วงเวลา</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {([['week', 'สัปดาห์นี้'], ['month', 'เดือนนี้'], ['custom', 'กำหนดเอง']] as const).map(([val, label]) => (
                     <button key={val} onClick={() => setExportPeriod(val)}
                       className={cn('py-2 rounded-lg border text-sm font-medium transition-colors',
@@ -1815,7 +1819,7 @@ export default function SuppliesPage() {
 
               {/* Custom date range */}
               {exportPeriod === 'custom' && (
-                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg">
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">จากวันที่</label>
                     <input type="date" value={exportStartDate} onChange={e => setExportStartDate(e.target.value)}
@@ -1832,7 +1836,7 @@ export default function SuppliesPage() {
               {/* Type selector */}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">ประเภทวัสดุ</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {([['all', 'ทั้งหมด'], ['STOCK', 'คงคลัง'], ['NON_STOCK', 'ไม่คงคลัง']] as const).map(([val, label]) => (
                     <button key={val} onClick={() => setExportType(val)}
                       className={cn('py-2 rounded-lg border text-sm font-medium transition-colors',

@@ -12,7 +12,7 @@
 /**
  * บทบาทของผู้ใช้ในระบบ
  */
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'EMPLOYEE' | 'HR';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'DIRECTOR' | 'EMPLOYEE' | 'HR';
 
 /**
  * ข้อมูลผู้ใช้พื้นฐาน (ไม่รวมรหัสผ่าน)
@@ -157,6 +157,10 @@ export interface Task {
   assignee: User | null;
   reminderAt: Date | null;
   reminderSentAt: Date | null;
+  reminderDayBeforeAt: Date | null;
+  reminderDayBeforeSentAt: Date | null;
+  reminderOnDayAt: Date | null;
+  reminderOnDaySentAt: Date | null;
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;

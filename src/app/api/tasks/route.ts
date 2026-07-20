@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma';
 import { createTaskSchema } from '@/lib/security';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { toSafeGregorianDate, computeTaskReminderSchedule } from '@/lib/utils';
 
 /**
  * GET /api/tasks
@@ -189,6 +190,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // คำนวณวัน/เวลาแจ้งเตือนอัตโนมัติ (19:00 ก่อนวัน 1 วัน + 08:00 วันจริง) จากวันที่ของ reminderAt
+    const safeReminderAt = reminderAt ? toSafeGregorianDate(reminderAt) : null;
+    const autoSchedule = safeReminderAt ? computeTaskReminderSchedule(safeReminderAt) : null;
+
     // สร้างงานใหม่
     const task = await prisma.task.create({
       data: {
@@ -197,7 +202,9 @@ export async function POST(request: NextRequest) {
         priority,
         columnId: columnId || 1, // คอลัมน์แรกเป็นค่าเริ่มต้น
         assigneeId: assigneeId || null,
-        reminderAt: reminderAt ? new Date(reminderAt) : null,
+        reminderAt: safeReminderAt,
+        reminderDayBeforeAt: autoSchedule?.dayBeforeAt ?? null,
+        reminderOnDayAt: autoSchedule?.onDayAt ?? null,
       },
       include: {
         column: true,

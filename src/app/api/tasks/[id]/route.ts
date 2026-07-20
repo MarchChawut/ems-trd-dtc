@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { toSafeGregorianDate, computeTaskReminderSchedule } from '@/lib/utils';
 
 /**
  * PATCH /api/tasks/[id]
@@ -144,9 +145,16 @@ export async function PATCH(
     }
 
     if (body.reminderAt !== undefined) {
-      updateData.reminderAt = body.reminderAt ? new Date(body.reminderAt) : null;
-      // ตั้งเวลาแจ้งเตือนใหม่ (หรือลบ) ทุกครั้ง ให้รีเซ็ตสถานะ "ส่งแล้ว" เพื่อให้เวลาที่ตั้งใหม่ยังส่งแจ้งเตือนได้
+      const safeReminderAt = body.reminderAt ? toSafeGregorianDate(body.reminderAt) : null;
+      const autoSchedule = safeReminderAt ? computeTaskReminderSchedule(safeReminderAt) : null;
+
+      updateData.reminderAt = safeReminderAt;
+      updateData.reminderDayBeforeAt = autoSchedule?.dayBeforeAt ?? null;
+      updateData.reminderOnDayAt = autoSchedule?.onDayAt ?? null;
+      // ตั้งเวลาแจ้งเตือนใหม่ (หรือลบ) ทุกครั้ง ให้รีเซ็ตสถานะ "ส่งแล้ว" ทั้ง 3 แบบ เพื่อให้เวลาที่ตั้งใหม่ยังส่งแจ้งเตือนได้
       updateData.reminderSentAt = null;
+      updateData.reminderDayBeforeSentAt = null;
+      updateData.reminderOnDaySentAt = null;
     }
 
     if (body.archivedAt !== undefined) {

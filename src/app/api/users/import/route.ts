@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
     const defaultPassword = await hashPassword('password123');
 
     // ตัวเลือก role ที่ valid
-    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'HR'];
+    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'DIRECTOR', 'EMPLOYEE', 'HR'];
 
     const results = {
       imported: 0,

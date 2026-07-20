@@ -202,8 +202,15 @@ model Task {
   columnId    Int        @default(1) // อ้างอิงถึง KanbanColumn
   priority    Priority   @default(MEDIUM)
   assigneeId  Int?
-  reminderAt  DateTime?  // วัน/เวลาแจ้งเตือน
-  reminderSentAt DateTime? // วัน/เวลาที่ส่งแจ้งเตือนเข้ากลุ่ม LINE ไปแล้ว (กันส่งซ้ำ)
+  reminderAt  DateTime?  // วัน/เวลาแจ้งเตือน (เจาะจงเวลา)
+  reminderSentAt DateTime? // วัน/เวลาที่ส่งแจ้งเตือนแบบเจาะจงเวลาเข้ากลุ่ม LINE ไปแล้ว (กันส่งซ้ำ)
+
+  // แจ้งเตือนอัตโนมัติเพิ่มเติม คำนวณจากวันที่ของ reminderAt (ไม่ใช่ค่าที่ผู้ใช้กรอกเอง)
+  reminderDayBeforeAt     DateTime? // = วันที่ของ reminderAt ลบ 1 วัน เวลา 19:00
+  reminderDayBeforeSentAt DateTime? // ส่งแจ้งเตือนล่วงหน้า 1 วันแล้วหรือยัง
+  reminderOnDayAt         DateTime? // = วันที่ของ reminderAt เวลา 08:00
+  reminderOnDaySentAt     DateTime? // ส่งแจ้งเตือนวันจริงแล้วหรือยัง
+
   archivedAt  DateTime?  // วัน/เวลาที่เก็บถาวร
   
   // ความสัมพันธ์
@@ -264,11 +271,18 @@ model LeaveRule {
   fullDayHours     Float    @default(8) // จำนวนชั่วโมง = 1 วัน
   halfDayHours     Float    @default(4) // จำนวนชั่วโมง = 0.5 วัน
   maxConsecutiveDays Int   @default(30) // จำนวนวันลาติดต่อกันสูงสุด
+
+  // สูตรคำนวณวันลาจากชั่วโมง (ใช้จริงในการคำนวณ Leave.totalDays - ดู src/lib/leave-calc.ts)
+  hourThreshold   Float    @default(3) // ลาเป็นชั่วโมงไม่เกินนี้ = ครึ่งวัน, เกิน = เต็มวัน
+  halfDayFraction Float    @default(0.5) // สัดส่วนวันลาสำหรับ "ครึ่งวัน"
+
+  // ปีงบประมาณที่กฎนี้มีผล (ปีที่ปีงบประมาณเริ่มต้น 1 ต.ค.) - null = กฎเริ่มต้น/fallback ที่ไม่ผูกปีใดปีหนึ่ง
+  fiscalYear      Int?     @unique
   isActive        Boolean  @default(true)
-  
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  
+
   @@map("leave_rules")
 }
 
@@ -353,6 +367,7 @@ enum Role {
   SUPER_ADMIN // ผู้ดูแลระบบสูงสุด
   ADMIN       // ผู้ดูแลระบบ
   MANAGER     // ผู้จัดการ
+  DIRECTOR    // ผู้อำนวยการกอง (ผู้อนุมัติ/ลงนาม)
   EMPLOYEE    // พนักงานทั่วไป
   HR          // ฝ่ายบุคคล
 }

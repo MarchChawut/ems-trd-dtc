@@ -14,19 +14,19 @@ import { logger } from '@/lib/logger';
 /**
  * GET /api/users
  * ดึงรายชื่อผู้ใช้ทั้งหมด
- * 
+ *
  * Query Parameters:
  * - search: ค้นหาด้วยชื่อหรืออีเมล
  * - role: กรองตามบทบาท
  * - department: กรองตามแผนก
  * - isActive: กรองตามสถานะ
- * 
- * Response:
- * {
- *   success: true,
- *   data: User[],
- *   meta: { total, page, limit }
- * }
+ * - page, limit: แบ่งหน้าแบบ opt-in — ถ้าไม่ส่งมา จะได้ array เต็มเหมือนเดิม
+ *   (ผู้เรียกใช้เดิม เช่น dropdown/ตารางต่างๆ ยังพึ่งพา array เต็มอยู่)
+ *
+ * Response (ไม่ส่ง page/limit):
+ * { success: true, data: User[], meta: { total } }
+ * Response (ส่ง page และ/หรือ limit):
+ * { success: true, data: User[], meta: { total, page, limit, hasMore } }
  */
 export async function GET(request: NextRequest) {
   try {
@@ -45,6 +45,11 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get('role');
     const department = searchParams.get('department');
     const isActive = searchParams.get('isActive');
+
+    // แบ่งหน้าแบบ opt-in: ใช้เฉพาะเมื่อมีการส่ง page หรือ limit มาจริง
+    const hasPagination = searchParams.has('page') || searchParams.has('limit');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '50') || 50));
 
     // สร้าง where clause
     const where: any = {};
@@ -95,6 +100,7 @@ export async function GET(request: NextRequest) {
           updatedAt: true,
         },
         orderBy: { createdAt: 'desc' },
+        ...(hasPagination ? { skip: (page - 1) * limit, take: limit } : {}),
       }),
       prisma.user.count({ where }),
     ]);
@@ -102,7 +108,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: users,
-      meta: { total },
+      meta: hasPagination ? { total, page, limit, hasMore: page * limit < total } : { total },
     });
 
   } catch (error) {

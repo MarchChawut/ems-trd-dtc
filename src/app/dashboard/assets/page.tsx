@@ -1,15 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Image from 'next/image';
 import {
   Plus, Search, Download, Loader2, X, Monitor,
   FileText, History, Settings, Image as ImageIcon
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, safeGetGregorianYear } from '@/lib/utils';
 import {
   Asset, AssetCategory, AssetCheckout, AssetStatus,
-  AssetCondition, User, UserRole
+  AssetCondition, User
 } from '@/types';
+import { useCurrentUser } from '@/contexts/UserContext';
 
 // ============================================
 // Config
@@ -33,7 +35,12 @@ const CONDITION_LABELS: Record<AssetCondition, string> = {
 
 function formatDate(d: Date | string | null | undefined) {
   if (!d) return '-';
-  return new Date(d).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+  const date = new Date(d);
+  const correctedYear = safeGetGregorianYear(date);
+  if (correctedYear !== date.getFullYear()) {
+    date.setFullYear(correctedYear);
+  }
+  return date.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 function fmtPrice(n: number | null | undefined) {
@@ -79,6 +86,7 @@ function defaultCheckoutForm() {
 // ============================================
 
 export default function AssetsPage() {
+  const { role: userRole } = useCurrentUser();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [categories, setCategories] = useState<AssetCategory[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -88,7 +96,6 @@ export default function AssetsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
-  const [userRole, setUserRole] = useState<UserRole>('EMPLOYEE');
   const [error, setError] = useState<string | null>(null);
 
   // Create/Edit modal
@@ -132,7 +139,7 @@ export default function AssetsPage() {
   const [newCatName, setNewCatName] = useState('');
   const [catLoading, setCatLoading] = useState(false);
 
-  const canManage = ['MANAGER', 'ADMIN', 'SUPER_ADMIN'].includes(userRole);
+  const canManage = ['MANAGER', 'DIRECTOR', 'ADMIN', 'SUPER_ADMIN'].includes(userRole);
 
   // ----------------------------------------
   // Fetch
@@ -140,22 +147,19 @@ export default function AssetsPage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [sessionRes, assetsRes, catsRes, usersRes] = await Promise.all([
-        fetch('/api/auth/session'),
+      const [assetsRes, catsRes, usersRes] = await Promise.all([
         fetch('/api/assets'),
         fetch('/api/asset-categories'),
         fetch('/api/users'),
       ]);
-      const sessionData = await sessionRes.json();
       const assetsData = await assetsRes.json();
       const catsData = await catsRes.json();
       const usersData = await usersRes.json();
 
-      if (sessionData.success) setUserRole(sessionData.data.user.role);
       if (assetsData.success) setAssets(assetsData.data);
       if (catsData.success) setCategories(catsData.data);
       if (usersData.success) {
-        const roleOrder: Record<string, number> = { SUPER_ADMIN: 0, ADMIN: 1, MANAGER: 2, HR: 3, EMPLOYEE: 4 };
+        const roleOrder: Record<string, number> = { SUPER_ADMIN: 0, ADMIN: 1, MANAGER: 2, DIRECTOR: 3, HR: 4, EMPLOYEE: 5 };
         const sorted = [...usersData.data].sort((a: User, b: User) =>
           (roleOrder[a.role] ?? 5) - (roleOrder[b.role] ?? 5) || a.name.localeCompare(b.name, 'th')
         );
@@ -619,7 +623,7 @@ export default function AssetsPage() {
                   <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="py-3 px-4">
                       {a.imageUrl
-                        ? <img src={a.imageUrl} alt={a.name} className="w-10 h-10 rounded object-cover border border-slate-200" />
+                        ? <Image src={a.imageUrl} alt={a.name} width={40} height={40} className="w-10 h-10 rounded object-cover border border-slate-200" />
                         : <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center"><ImageIcon size={16} className="text-slate-300" /></div>
                       }
                     </td>
@@ -685,7 +689,7 @@ export default function AssetsPage() {
             <form onSubmit={handleSubmitAsset} className="p-5 space-y-4">
               {formError && <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-600">{formError}</div>}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">รหัสครุภัณฑ์ (Asset Tag)</label>
                   <input value={formData.assetTag} onChange={e => setFormData(p => ({ ...p, assetTag: e.target.value }))}
@@ -795,7 +799,7 @@ export default function AssetsPage() {
                   <input type="file" accept="image/*" onChange={e => setImageFile(e.target.files?.[0] || null)}
                     className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm" />
                   {formData.imageUrl && !imageFile && (
-                    <img src={formData.imageUrl} className="mt-1 w-16 h-16 object-cover rounded border border-slate-200" alt="preview" />
+                    <Image src={formData.imageUrl} width={64} height={64} className="mt-1 w-16 h-16 object-cover rounded border border-slate-200" alt="preview" />
                   )}
                 </div>
 
@@ -927,7 +931,7 @@ export default function AssetsPage() {
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               {/* Asset summary info */}
-              <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 rounded-lg p-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-slate-50 rounded-lg p-3">
                 <div><span className="text-slate-500">วันที่นำเข้า:</span> <span className="font-medium">{formatDate((historyAsset as any).acquisitionDate)}</span></div>
                 <div><span className="text-slate-500">สภาพปัจจุบัน:</span> <span className="font-medium">{CONDITION_LABELS[(historyAsset as any).condition as AssetCondition] || '-'}</span></div>
                 <div><span className="text-slate-500">ผู้ครอบครอง:</span> <span className="font-medium">{holderName((historyAsset as any).currentHolder)}</span></div>

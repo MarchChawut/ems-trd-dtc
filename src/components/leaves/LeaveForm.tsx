@@ -9,8 +9,9 @@
 
 import React, { useRef, useState } from "react";
 import { Printer, X, FileDown, Loader2 } from "lucide-react";
-import { Leave, LeaveType, User, Holiday } from "@/types";
+import { Leave, LeaveType, User } from "@/types";
 import { formatSignatureName } from "@/lib/utils";
+import { getFiscalYearRange } from "@/lib/leave-calc";
 
 interface LeaveFormProps {
   leave: Leave & { user: User };
@@ -22,25 +23,11 @@ interface LeaveFormProps {
     totalCount: number;
     totalDays: number;
   };
-  holidays?: Holiday[];
   previousLeave?: (Leave & { user: User }) | null;
   userLeaves?: Leave[];
+  /** ผู้อำนวยการกอง (role DIRECTOR) ที่ยัง active อยู่ - ใช้พิมพ์ชื่อ/ตำแหน่งล่วงหน้าในช่องลงนาม */
+  director?: User | null;
   onClose: () => void;
-}
-
-/**
- * คำนวณช่วงปีงบประมาณ (1 ต.ค. - 30 ก.ย.)
- */
-function getFiscalYearRange(date: Date): { start: Date; end: Date } {
-  const year = date.getFullYear();
-  const month = date.getMonth(); // 0-indexed
-  // ถ้าเดือน ต.ค.(9) ขึ้นไป = ปีงบประมาณเริ่มปีนี้
-  // ถ้าเดือน ม.ค.(0) - ก.ย.(8) = ปีงบประมาณเริ่มปีก่อน
-  const fiscalStartYear = month >= 9 ? year : year - 1;
-  return {
-    start: new Date(fiscalStartYear, 9, 1), // 1 ต.ค.
-    end: new Date(fiscalStartYear + 1, 8, 30), // 30 ก.ย.
-  };
 }
 
 interface TypeStats {
@@ -98,60 +85,20 @@ function formatThaiDate(date: Date | string): {
 }
 
 /**
- * คำนวณจำนวนวันลา (คืนค่าตัวเลข หน่วยเป็นวัน)
- */
-function calculateLeaveDaysNum(
-  startDate: Date | string,
-  endDate: Date | string,
-  isHalfDay: boolean,
-  hours?: number | null,
-  holidays?: Holiday[],
-): number {
-  if (hours && hours > 0) {
-    // 1 ชม. = 0.1 วัน, 8 ชม. = 0.8 วัน
-    return Math.round((hours / 10) * 10) / 10;
-  }
-  if (isHalfDay) {
-    return 0.4;
-  }
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(endDate);
-  end.setHours(0, 0, 0, 0)
-  let count = 0;
-  const current = new Date(start);
-  while (current <= end) {
-    const dayOfWeek = current.getDay();
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      const dateStr = current.toISOString().split('T')[0];
-      const isOrgHoliday = holidays?.some(h => {
-        const hDate = new Date(h.date).toISOString().split('T')[0];
-        return hDate === dateStr;
-      }) || false;
-      if (!isOrgHoliday) {
-        count++;
-      }
-    }
-    current.setDate(current.getDate() + 1);
-  }
-  return count;
-}
-
-/**
- * แสดงผลจำนวนวันลาเป็นข้อความ (รองรับครึ่งวันและชั่วโมง)
+ * แสดงผลจำนวนวันลาที่บันทึกไว้แล้วเป็นข้อความ (รองรับครึ่งวันและชั่วโมง)
+ * ไม่คำนวณใหม่ - ใช้ Leave.totalDays ที่บันทึกไว้ตอนสร้าง/แก้ไขรายการลา
+ * (แหล่งความจริงเดียว ดู src/lib/leave-calc.ts) เพื่อไม่ให้ค่าที่พิมพ์ขัดแย้งกับค่าที่บันทึกจริง
  */
 function formatLeaveDays(
   days: number,
   hours?: number | null,
   isHalfDay?: boolean,
 ): string {
-  // ลาเป็นชั่วโมง: 1 ชม. = 0.1 วัน, 8 ชม. = 0.8 วัน
   if (hours && hours > 0) {
-    const dayEquiv = (Math.round((hours / 10) * 10) / 10).toFixed(1);
-    return `${dayEquiv} วัน`;
+    return `${days} วัน`;
   }
-  if (isHalfDay || days === 0.4) {
-    return "0.4 วัน";
+  if (isHalfDay) {
+    return `${days} วัน`;
   }
   // แสดงทศนิยม 1 ตำแหน่ง
   if (days % 1 !== 0) {
@@ -160,38 +107,21 @@ function formatLeaveDays(
   return `${days} วัน`;
 }
 
-/**
- * คำนวณจำนวนวันลา (คืนข้อความสำหรับแสดงผล)
- */
-function calculateLeaveDays(
-  startDate: Date | string,
-  endDate: Date | string,
-  isHalfDay: boolean,
-  hours?: number | null,
-  holidays?: Holiday[],
-): string {
-  const days = calculateLeaveDaysNum(startDate, endDate, isHalfDay, hours, holidays);
-  return formatLeaveDays(days, hours, isHalfDay);
-}
-
 export default function LeaveForm({
   leave,
   userStats,
-  holidays = [],
   previousLeave,
   userLeaves = [],
+  director = null,
   onClose,
 }: LeaveFormProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  // คำนวณสถิติแยกตามประเภทลาในปีงบประมาณ
+  // คำนวณสถิติแยกตามประเภทลาในปีงบประมาณ (ใช้ totalDays ที่บันทึกไว้แล้วของแต่ละรายการ)
   const fiscalRange = getFiscalYearRange(new Date(leave.startDate));
-  const calcBusinessDays = (l: Leave) =>
-    calculateLeaveDaysNum(l.startDate, l.endDate, l.isHalfDay, l.hours, holidays);
-
-  const currentLeaveDaysNum = calcBusinessDays(leave);
+  const currentLeaveDaysNum = leave.totalDays;
 
   const computeTypeStats = (type: string): TypeStats => {
     // ลาก่อนหน้า (ไม่รวมใบลาปัจจุบัน) ในปีงบประมาณเดียวกัน
@@ -204,7 +134,7 @@ export default function LeaveForm({
         (l.status === 'APPROVED' || l.status === 'PENDING')
     );
     const pastCount = pastLeaves.length;
-    const pastDays = pastLeaves.reduce((sum, l) => sum + calcBusinessDays(l), 0);
+    const pastDays = pastLeaves.reduce((sum, l) => sum + l.totalDays, 0);
 
     const currentCount = leave.type === type ? 1 : 0;
     const currentDays = leave.type === type ? currentLeaveDaysNum : 0;
@@ -248,19 +178,19 @@ export default function LeaveForm({
   const documentDate = formatThaiDate(
     (leave as any).createdAt ? new Date((leave as any).createdAt) : new Date()
   );
-  const leaveDays = calculateLeaveDays(
-    leave.startDate,
-    leave.endDate,
-    leave.isHalfDay,
-    leave.hours,
-    holidays,
-  );
+  const leaveDays = formatLeaveDays(leave.totalDays, leave.hours, leave.isHalfDay);
+
+  // ผู้ลงนามอนุมัติ (ผู้อำนวยการ) - ใช้ข้อมูลจริงถ้ามี ไม่เช่นนั้นคงค่าเดิมของแบบฟอร์มไว้
+  const directorSig = director
+    ? formatSignatureName(director.prefix, director.name)
+    : { linePrefix: 'พ.อ.', parenName: 'ปรียพงศ์  สามิภักดิ์' };
+  const directorPosition = director?.position || 'ผอ.กองการศึกษา วิจัย และพัฒนา';
 
   // ข้อมูลการลาครั้งก่อน
   const prevLeaveDate = previousLeave ? formatThaiDate(previousLeave.startDate) : null;
   const prevLeaveEndDate = previousLeave ? formatThaiDate(previousLeave.endDate) : null;
   const prevLeaveDays = previousLeave
-    ? calculateLeaveDays(previousLeave.startDate, previousLeave.endDate, previousLeave.isHalfDay, previousLeave.hours, holidays)
+    ? formatLeaveDays(previousLeave.totalDays, previousLeave.hours, previousLeave.isHalfDay)
     : null;
 
   const handlePrint = () => {
@@ -326,7 +256,7 @@ export default function LeaveForm({
       // ด้วยฟอนต์ THSarabun.ttf ในเครื่อง (กันปัญหาเซิร์ฟเวอร์ intranet ต่ออินเทอร์เน็ตออกไปโหลดฟอนต์ไม่ได้)
       const { generateLeavePDF } = await import("./LeaveFormPDF");
       await import("./pdf-fonts");
-      const blob = await generateLeavePDF(leave, stats);
+      const blob = await generateLeavePDF(leave, stats, director);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -1403,7 +1333,7 @@ export default function LeaveForm({
                       textAlign: "left",
                     }}
                   >
-                    พ.อ.
+                    {directorSig.linePrefix}
                     </span>
                 </div>
 
@@ -1426,7 +1356,7 @@ export default function LeaveForm({
                       position: "relative",
                     }}
                   >
-                    ( ปรียพงศ์&nbsp;&nbsp;สามิภักดิ์ )
+                    ( {directorSig.parenName} )
                   </span>
                 </div>
 
@@ -1456,7 +1386,7 @@ export default function LeaveForm({
                       textAlign: "center",
                     }}
                   >
-                    ผอ.กองการศึกษา วิจัย และพัฒนา
+                    {directorPosition}
                   </span>
                 </div>
 

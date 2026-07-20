@@ -41,6 +41,8 @@ interface LeaveFormPDFProps {
     totalCount: number;
     totalDays: number;
   };
+  /** ผู้อำนวยการกอง (role DIRECTOR) ที่ยัง active อยู่ - ใช้พิมพ์ชื่อ/ตำแหน่งล่วงหน้าในช่องลงนาม */
+  director?: User | null;
 }
 
 const leaveTypeLabels: Record<LeaveType, { short: string; full: string }> = {
@@ -77,27 +79,6 @@ function formatThaiDate(date: Date | string) {
     // แปลงเป็น พ.ศ. อย่างปลอดภัย (ป้องกันบวก 543 ซ้ำ)
     year: (d.getFullYear() > 2500 ? d.getFullYear() : d.getFullYear() + 543).toString(),
   };
-}
-
-function calculateLeaveDays(
-  startDate: Date | string,
-  endDate: Date | string,
-  isHalfDay: boolean,
-  hours?: number | null,
-): string {
-  if (hours && hours > 0) {
-    // 1 ชม. = 0.1 วัน, 8 ชม. = 0.8 วัน
-    return (Math.round((hours / 10) * 10) / 10).toFixed(1);
-  }
-
-  if (isHalfDay) return "0.5";
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const diffTime = Math.abs(end.getTime() - start.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-  return diffDays.toString();
 }
 
 // สร้าง styles สำหรับ PDF
@@ -239,26 +220,24 @@ const styles = StyleSheet.create({
 });
 
 // PDF Document Component
-function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
+function LeaveDocument({ leave, userStats, director }: LeaveFormPDFProps) {
+  const directorSig = director
+    ? formatSignatureName(director.prefix, director.name)
+    : { linePrefix: 'พ.อ.', parenName: 'ปรียพงศ์  สามิภักดิ์' };
+  const directorPosition = director?.position || 'ผอ.กองการศึกษา วิจัย และพัฒนา';
   const startDate = formatThaiDate(leave.startDate);
   const endDate = formatThaiDate(leave.endDate);
   // ใช้วันที่ที่สร้างใบลา (createdAt) เพื่อให้เมื่อเปิดย้อนหลังยังเป็นวันที่เขียนจริง
   const documentDate = formatThaiDate(
     (leave as any).createdAt ? new Date((leave as any).createdAt) : new Date()
   );
-  const leaveDays = calculateLeaveDays(
-    leave.startDate,
-    leave.endDate,
-    leave.isHalfDay,
-    leave.hours,
-  );
   // หน่วยที่แสดงหลัง leaveDays
   const leaveUnit = (leave.hours && leave.hours > 0) ? "ชม." : "วัน";
-
-  // แปลง hours → วัน (1 ชม. = 0.1 วัน, 8 ชม. = 0.8 วัน)
-  const currentDaysValue = leave.hours && leave.hours > 0
-    ? Math.round((leave.hours / 10) * 10) / 10
-    : parseFloat(leaveDays) || 1;
+  // ใช้ totalDays ที่บันทึกไว้แล้ว (คำนวณครั้งเดียวตอนสร้าง/แก้ไขรายการลา) แทนการคำนวณซ้ำ
+  const leaveDays = (leave.hours && leave.hours > 0)
+    ? leave.hours.toString()
+    : leave.totalDays.toString();
+  const currentDaysValue = leave.totalDays;
 
   // label หัวตาราง
   const tableUnit = leave.hours && leave.hours > 0 ? "ครั้ง/ชม." : "ครั้ง/วัน";
@@ -775,7 +754,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
 
             {/* ลงชื่อ */}
             <View style={[styles.leftAlignRow, { justifyContent: "center" }]}>
-              <Text>ลงชื่อ </Text>
+              <Text>ลงชื่อ {directorSig.linePrefix}</Text>
               <Text style={[styles.dottedLine, { minWidth: 155 }]} />
             </View>
 
@@ -787,7 +766,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
                   { minWidth: 155, textAlign: "center" },
                 ]}
               >
-                ( ปรียพงศ์  สามิภักดิ์ )
+                ( {directorSig.parenName} )
               </Text>
             </View>
 
@@ -799,7 +778,7 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
                   { minWidth: 155, textAlign: "center" },
                 ]}
               >
-                ตำแหน่ง ผอ.กองการศึกษา วิจัย และพัฒนา
+                ตำแหน่ง {directorPosition}
               </Text>
             </View>
 
@@ -822,13 +801,14 @@ function LeaveDocument({ leave, userStats }: LeaveFormPDFProps) {
 export async function generateLeavePDF(
   leave: Leave & { user: User },
   userStats?: LeaveFormPDFProps["userStats"],
+  director?: User | null,
 ): Promise<Blob> {
   if (typeof window === "undefined") {
     throw new Error("generateLeavePDF can only be called on the client side");
   }
   const { pdf } = await import("@react-pdf/renderer");
   const blob = await pdf(
-    <LeaveDocument leave={leave} userStats={userStats} />,
+    <LeaveDocument leave={leave} userStats={userStats} director={director} />,
   ).toBlob();
   return blob;
 }
@@ -837,11 +817,12 @@ export async function generateLeavePDF(
 export function LeavePDFDownloadLink({
   leave,
   userStats,
+  director,
   children,
 }: LeaveFormPDFProps & { children: React.ReactNode }) {
   return (
     <PDFDownloadLink
-      document={<LeaveDocument leave={leave} userStats={userStats} />}
+      document={<LeaveDocument leave={leave} userStats={userStats} director={director} />}
       fileName={`leave_form_${leave.user.username}_${new Date().toISOString().split("T")[0]}.pdf`}
       style={{ textDecoration: "none" }}
     >

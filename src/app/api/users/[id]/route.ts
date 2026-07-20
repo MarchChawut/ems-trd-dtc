@@ -17,7 +17,7 @@ const updateUserSchema = z.object({
   email: z.union([z.string().email('รูปแบบอีเมลไม่ถูกต้อง'), z.literal('')]).nullable().optional(),
   prefix: z.string().max(50).nullable().optional(),
   name: z.string().min(1, 'กรุณาระบุชื่อ').max(100).optional(),
-  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'HR']).optional(),
+  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'DIRECTOR', 'EMPLOYEE', 'HR']).optional(),
   department: z.string().max(100).nullable().optional(),
   division: z.string().max(200).nullable().optional(),
   position: z.string().max(100).nullable().optional(),

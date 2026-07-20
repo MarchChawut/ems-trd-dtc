@@ -11,6 +11,8 @@ import { createLeaveSchema } from '@/lib/security';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import { toSafeGregorianDate } from '@/lib/utils';
+import { calculateLeaveDays } from '@/lib/leave-calc';
+import { getEffectiveLeaveRule } from '@/lib/leave-rules-server';
 
 /**
  * GET /api/leaves
@@ -193,51 +195,26 @@ export async function POST(request: NextRequest) {
     }
 
     // คำนวณจำนวนวันลา (ไม่นับเสาร์-อาทิตย์ และวันหยุดที่ admin กำหนด)
-    let totalDays = 0;
-    if (hours && hours > 0) {
-      // ลา ≤ 3 ชม. = ครึ่งวัน (0.5), > 3 ชม. = 1 วัน
-      totalDays = hours <= 3 ? 0.5 : 1;
-    } else if (isHalfDay) {
-      // ลาครึ่งวัน = 0.5 วัน
-      totalDays = 0.5;
-    } else {
-      // ดึงวันหยุดจากฐานข้อมูล
-      const start = toSafeGregorianDate(startDate);
-      const end = toSafeGregorianDate(endDate);
-      
-      let holidays: Date[] = [];
-      try {
-        const holidayRecords = await prisma.holiday.findMany({
-          where: {
-            isActive: true,
-            date: { gte: start, lte: end },
-          },
-          select: { date: true },
-        });
-        holidays = holidayRecords.map((h: { date: Date }) => h.date);
-      } catch {
-        // ถ้ายังไม่มีตาราง holiday ให้ข้ามไป
-      }
+    // ใช้กฎการลาที่มีผลกับปีงบประมาณของ startDate (ปรับได้ต่อปีในหน้าตั้งค่า)
+    const start = toSafeGregorianDate(startDate);
+    const end = toSafeGregorianDate(endDate);
 
-      // นับเฉพาะวันทำการ (จันทร์-ศุกร์ ที่ไม่ใช่วันหยุด)
-      const current = new Date(start);
-      while (current <= end) {
-        const dayOfWeek = current.getDay();
-        // 0 = อาทิตย์, 6 = เสาร์
-        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-          // ตรวจสอบว่าไม่ใช่วันหยุด
-          const isHoliday = holidays.some(h => 
-            h.getFullYear() === current.getFullYear() &&
-            h.getMonth() === current.getMonth() &&
-            h.getDate() === current.getDate()
-          );
-          if (!isHoliday) {
-            totalDays++;
-          }
-        }
-        current.setDate(current.getDate() + 1);
-      }
+    let holidays: { date: Date }[] = [];
+    try {
+      const holidayRecords = await prisma.holiday.findMany({
+        where: {
+          isActive: true,
+          date: { gte: start, lte: end },
+        },
+        select: { date: true },
+      });
+      holidays = holidayRecords;
+    } catch {
+      // ถ้ายังไม่มีตาราง holiday ให้ข้ามไป
     }
+
+    const leaveRule = await getEffectiveLeaveRule(start);
+    const totalDays = calculateLeaveDays(start, end, isHalfDay ?? false, hours, holidays, leaveRule);
 
     // สร้างรายการลาใหม่
     const leave = await prisma.leave.create({

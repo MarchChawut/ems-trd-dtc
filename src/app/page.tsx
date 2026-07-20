@@ -404,7 +404,7 @@ export default function LoginPage() {
                     เก็บรหัสเหล่านี้ไว้ในที่ปลอดภัย ใช้เข้าสู่ระบบได้เมื่อไม่มีอุปกรณ์ — แสดงเพียงครั้งเดียว
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-2 bg-slate-50 border border-slate-200 rounded-lg p-4 font-mono text-sm text-slate-700">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 border border-slate-200 rounded-lg p-4 font-mono text-sm text-slate-700">
                   {backupCodes.map((c) => (
                     <span key={c} className="text-center">{c}</span>
                   ))}

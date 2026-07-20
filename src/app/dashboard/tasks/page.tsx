@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Task, TaskPriority, User } from '@/types';
+import { useCurrentUser } from '@/contexts/UserContext';
 
 /**
  * ข้อมูลคอลัมน์
@@ -73,7 +74,8 @@ const columnColors: Record<string, { border: string; bg: string }> = {
  */
 export default function TasksPage() {
   const router = useRouter();
-  
+  const { role: userRole } = useCurrentUser();
+
   // State สำหรับเก็บรายการงาน
   const [tasks, setTasks] = useState<Task[]>([]);
   
@@ -113,9 +115,6 @@ export default function TasksPage() {
   
   // State สำหรับงานที่กำลังลาก
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
-  
-  // State สำหรับ role ของผู้ใช้ปัจจุบัน
-  const [userRole, setUserRole] = useState<string>('');
 
   // State สำหรับ Task Detail Modal
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -137,39 +136,32 @@ export default function TasksPage() {
   const [showArchived, setShowArchived] = useState(false);
 
   /**
-   * ดึงข้อมูลจาก API
+   * ดึงข้อมูลจาก API (คอลัมน์/งาน/ผู้ใช้ ไม่ขึ้นต่อกัน ยิงพร้อมกันได้)
    */
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // ดึงข้อมูล session เพื่อตรวจสอบ role
-        const sessionRes = await fetch('/api/auth/session');
-        const sessionData = await sessionRes.json();
-        if (sessionData.success) {
-          setUserRole(sessionData.data.user.role);
-        }
+        const tasksUrl = showArchived ? '/api/tasks?showArchived=true' : '/api/tasks';
+        const [columnsResponse, tasksResponse, usersResponse] = await Promise.all([
+          fetch('/api/columns'),
+          fetch(tasksUrl),
+          fetch('/api/users'),
+        ]);
 
-        // ดึงข้อมูลคอลัมน์
-        const columnsResponse = await fetch('/api/columns');
-        const columnsData = await columnsResponse.json();
-        
+        const [columnsData, tasksData, usersData] = await Promise.all([
+          columnsResponse.json(),
+          tasksResponse.json(),
+          usersResponse.json(),
+        ]);
+
         if (columnsResponse.ok && columnsData.success) {
           setColumns(columnsData.data);
         }
 
-        // ดึงข้อมูลงาน
-        const tasksUrl = showArchived ? '/api/tasks?showArchived=true' : '/api/tasks';
-        const tasksResponse = await fetch(tasksUrl);
-        const tasksData = await tasksResponse.json();
-        
         if (tasksResponse.ok && tasksData.success) {
           setTasks(tasksData.data);
         }
-        
-        // ดึงข้อมูลผู้ใช้
-        const usersResponse = await fetch('/api/users');
-        const usersData = await usersResponse.json();
-        
+
         if (usersResponse.ok && usersData.success) {
           setUsers(usersData.data);
         }
@@ -179,7 +171,7 @@ export default function TasksPage() {
         setIsLoading(false);
       }
     };
-    
+
     fetchData();
   }, [showArchived]);
 
@@ -547,7 +539,7 @@ export default function TasksPage() {
   };
 
   // ตรวจสอบสิทธิ์จัดการคอลัมน์
-  const canManageColumns = ['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(userRole);
+  const canManageColumns = ['ADMIN', 'SUPER_ADMIN', 'MANAGER', 'DIRECTOR'].includes(userRole);
 
   // จัดกลุ่มงานตามคอลัมน์ (คำนวณครั้งเดียวแทนการ filter ซ้ำต่อคอลัมน์ทุก render)
   const tasksByColumn = useMemo(() => {
@@ -731,7 +723,7 @@ export default function TasksPage() {
                         {task.reminderAt && (
                           <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
                             <Bell size={12} />
-                            {new Date(task.reminderAt).toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            {new Date(task.reminderAt).toLocaleString('th-TH', { year: '2-digit', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
@@ -1049,7 +1041,7 @@ export default function TasksPage() {
                       onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">คอลัมน์</label>
                       <select
@@ -1139,7 +1131,7 @@ export default function TasksPage() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-slate-500">สถานะ</span>
                       <p className="font-medium text-slate-800 mt-0.5">
@@ -1173,14 +1165,14 @@ export default function TasksPage() {
                   </div>
 
                   {/* แจ้งเตือน */}
-                  <div className="bg-slate-50 rounded-lg p-3">
+                  <div className="bg-slate-50 rounded-lg p-3 space-y-2">
                     <div className="flex items-center gap-2 text-sm">
                       {selectedTask.reminderAt ? (
                         <>
                           <Bell size={14} className="text-amber-500" />
                           <span className="text-slate-600">แจ้งเตือน:</span>
                           <span className="font-medium text-slate-800">
-                            {new Date(selectedTask.reminderAt).toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            {new Date(selectedTask.reminderAt).toLocaleString('th-TH', { year: '2-digit', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </span>
                           {selectedTask.reminderSentAt ? (
                             <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">ส่งเข้ากลุ่ม LINE แล้ว</span>
@@ -1195,6 +1187,34 @@ export default function TasksPage() {
                         </>
                       )}
                     </div>
+
+                    {/* แจ้งเตือนอัตโนมัติ (คำนวณจากวันที่ของแจ้งเตือนด้านบน) */}
+                    {selectedTask.reminderDayBeforeAt && (
+                      <div className="flex items-center gap-2 text-sm pl-[22px]">
+                        <span className="text-slate-500">ล่วงหน้า 1 วัน:</span>
+                        <span className="font-medium text-slate-700">
+                          {new Date(selectedTask.reminderDayBeforeAt).toLocaleString('th-TH', { year: '2-digit', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {selectedTask.reminderDayBeforeSentAt ? (
+                          <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">ส่งแล้ว</span>
+                        ) : (
+                          <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">รอส่ง</span>
+                        )}
+                      </div>
+                    )}
+                    {selectedTask.reminderOnDayAt && (
+                      <div className="flex items-center gap-2 text-sm pl-[22px]">
+                        <span className="text-slate-500">วันจริง:</span>
+                        <span className="font-medium text-slate-700">
+                          {new Date(selectedTask.reminderOnDayAt).toLocaleString('th-TH', { year: '2-digit', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {selectedTask.reminderOnDaySentAt ? (
+                          <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">ส่งแล้ว</span>
+                        ) : (
+                          <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">รอส่ง</span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Archive status */}

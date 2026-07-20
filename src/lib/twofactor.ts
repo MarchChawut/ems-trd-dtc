@@ -39,8 +39,15 @@ export function buildOtpAuthUri(username: string, secret: string): string {
  */
 export async function verifyTotp(secret: string, token: string): Promise<boolean> {
   const cleaned = token.replace(/\s/g, '');
-  const result = await verifyOtp({ secret, token: cleaned, epochTolerance: 30 });
-  return result.valid;
+  try {
+    const result = await verifyOtp({ secret, token: cleaned, epochTolerance: 30 });
+    return result.valid;
+  } catch {
+    // otplib throws (instead of returning invalid) for malformed input, e.g. a
+    // backup code ("XXXXX-XXXXX") pasted into the TOTP field — callers try this
+    // first and fall back to backup-code matching, so this must not throw.
+    return false;
+  }
 }
 
 // ============================================

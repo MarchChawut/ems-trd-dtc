@@ -144,6 +144,9 @@ export async function POST(request: NextRequest) {
     if (msg.startsWith('UNAVAILABLE:')) {
       return NextResponse.json({ success: false, error: 'UNAVAILABLE', message: msg.slice(12) }, { status: 400 });
     }
+    if (msg.startsWith('INVALID:')) {
+      return NextResponse.json({ success: false, error: 'INVALID', message: msg.slice(8) }, { status: 400 });
+    }
     logger.error('Create asset checkout error', { error });
     return NextResponse.json(
       { success: false, error: 'INTERNAL_ERROR', message: 'เกิดข้อผิดพลาดภายในระบบ' },

@@ -3,16 +3,32 @@
  * API Route: /api/leave-rules
  * ==================================================
  * API สำหรับจัดการกฎเกณฑ์การลา (CRUD operations)
+ * รองรับกฎแยกตามปีงบประมาณ (fiscalYear) เนื่องจากเกณฑ์การลาเปลี่ยนแปลงในแต่ละปี
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, isManagerOrAbove } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
+const leaveRuleSchema = z.object({
+  name: z.string().min(1, 'กรุณาระบุชื่อกฎ').max(100),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, 'รูปแบบเวลาต้องเป็น HH:mm').optional(),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/, 'รูปแบบเวลาต้องเป็น HH:mm').optional(),
+  fullDayHours: z.number().positive().optional(),
+  halfDayHours: z.number().positive().optional(),
+  maxConsecutiveDays: z.number().int().positive().optional(),
+  hourThreshold: z.number().positive().optional(),
+  halfDayFraction: z.number().min(0).max(1).optional(),
+  // ปี ค.ศ. ที่ปีงบประมาณเริ่มต้น (1 ต.ค.) - ต้องตรงกับ getFiscalYear() ใน src/lib/leave-calc.ts (ปี ค.ศ. ไม่ใช่ พ.ศ.)
+  fiscalYear: z.number().int().min(2000).max(2100).nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+
 /**
  * GET /api/leave-rules
- * ดึงกฎเกณฑ์การลาทั้งหมด
+ * ดึงกฎเกณฑ์การลาทั้งหมด หรือกรองตามปีงบประมาณด้วย ?fiscalYear=
  */
 export async function GET(request: NextRequest) {
   try {
@@ -24,11 +40,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const { searchParams } = new URL(request.url);
+    const fiscalYearParam = searchParams.get('fiscalYear');
+
+    if (fiscalYearParam) {
+      const fiscalYear = parseInt(fiscalYearParam);
+      const rule = await prisma.leaveRule.findFirst({ where: { fiscalYear } });
+      return NextResponse.json({ success: true, data: rule ? [rule] : [] });
+    }
+
     const rules = await prisma.leaveRule.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ fiscalYear: 'desc' }, { createdAt: 'desc' }],
     });
 
-    // ถ้าไม่มีกฎ ให้สร้างกฎเริ่มต้น
+    // ถ้าไม่มีกฎ ให้สร้างกฎเริ่มต้น (fallback ไม่ผูกปีงบประมาณ)
     if (rules.length === 0) {
       const defaultRule = await prisma.leaveRule.create({
         data: {
@@ -38,6 +63,9 @@ export async function GET(request: NextRequest) {
           fullDayHours: 8,
           halfDayHours: 4,
           maxConsecutiveDays: 30,
+          hourThreshold: 3,
+          halfDayFraction: 0.5,
+          fiscalYear: null,
           isActive: true,
         },
       });
@@ -67,7 +95,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/leave-rules
- * สร้างกฎเกณฑ์การลาใหม่ (เฉพาะ Admin)
+ * สร้างกฎเกณฑ์การลาใหม่ (เฉพาะ Manager ขึ้นไป) - เช่น กฎสำหรับปีงบประมาณใหม่
  */
 export async function POST(request: NextRequest) {
   try {
@@ -80,8 +108,7 @@ export async function POST(request: NextRequest) {
     }
 
     const currentUser = authResult.user!;
-    
-    // เฉพาะ Admin ขึ้นไปเท่านั้น
+
     if (!isManagerOrAbove(currentUser.role)) {
       return NextResponse.json(
         {
@@ -94,16 +121,49 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    
+    const validationResult = leaveRuleSchema.safeParse(body);
+
+    if (!validationResult.success) {
+      const errors = validationResult.error.flatten().fieldErrors;
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'VALIDATION_ERROR',
+          message: 'ข้อมูลไม่ถูกต้อง',
+          details: errors,
+        },
+        { status: 400 }
+      );
+    }
+
+    const data = validationResult.data;
+
+    if (data.fiscalYear != null) {
+      const existing = await prisma.leaveRule.findFirst({ where: { fiscalYear: data.fiscalYear } });
+      if (existing) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'FISCAL_YEAR_EXISTS',
+            message: `มีกฎสำหรับปีงบประมาณ ${data.fiscalYear} อยู่แล้ว`,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const rule = await prisma.leaveRule.create({
       data: {
-        name: body.name || 'กฎการลา',
-        startTime: body.startTime || '08:30',
-        endTime: body.endTime || '16:30',
-        fullDayHours: body.fullDayHours || 8,
-        halfDayHours: body.halfDayHours || 4,
-        maxConsecutiveDays: body.maxConsecutiveDays || 30,
-        isActive: body.isActive ?? true,
+        name: data.name,
+        startTime: data.startTime || '08:30',
+        endTime: data.endTime || '16:30',
+        fullDayHours: data.fullDayHours ?? 8,
+        halfDayHours: data.halfDayHours ?? 4,
+        maxConsecutiveDays: data.maxConsecutiveDays ?? 30,
+        hourThreshold: data.hourThreshold ?? 3,
+        halfDayFraction: data.halfDayFraction ?? 0.5,
+        fiscalYear: data.fiscalYear ?? null,
+        isActive: data.isActive ?? true,
       },
     });
 
@@ -128,7 +188,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * PATCH /api/leave-rules
- * อัปเดตกฎเกณฑ์การลา (เฉพาะ Admin)
+ * อัปเดตกฎเกณฑ์การลา (เฉพาะ Manager ขึ้นไป)
  */
 export async function PATCH(request: NextRequest) {
   try {
@@ -141,7 +201,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const currentUser = authResult.user!;
-    
+
     if (!isManagerOrAbove(currentUser.role)) {
       return NextResponse.json(
         {
@@ -167,9 +227,39 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const validationResult = leaveRuleSchema.partial().safeParse(updateData);
+    if (!validationResult.success) {
+      const errors = validationResult.error.flatten().fieldErrors;
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'VALIDATION_ERROR',
+          message: 'ข้อมูลไม่ถูกต้อง',
+          details: errors,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (validationResult.data.fiscalYear != null) {
+      const existing = await prisma.leaveRule.findFirst({
+        where: { fiscalYear: validationResult.data.fiscalYear, NOT: { id: parseInt(id) } },
+      });
+      if (existing) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'FISCAL_YEAR_EXISTS',
+            message: `มีกฎสำหรับปีงบประมาณ ${validationResult.data.fiscalYear} อยู่แล้ว`,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const rule = await prisma.leaveRule.update({
       where: { id: parseInt(id) },
-      data: updateData,
+      data: validationResult.data,
     });
 
     return NextResponse.json({

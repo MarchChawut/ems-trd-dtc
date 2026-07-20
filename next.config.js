@@ -54,6 +54,22 @@ const nextConfig = {
   },
   // ปิดการใช้งาน powered by header เพื่อความปลอดภัย
   poweredByHeader: false,
+  // ลด bundle size ของไลบรารีที่ import แบบ barrel file (ตัด tree-shaking ที่ import เฉพาะ icon/component ที่ใช้จริง)
+  experimental: {
+    optimizePackageImports: [
+      'lucide-react',
+      'recharts',
+      '@radix-ui/react-avatar',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-label',
+      '@radix-ui/react-select',
+      '@radix-ui/react-separator',
+      '@radix-ui/react-slot',
+      '@radix-ui/react-toast',
+      '@radix-ui/react-tooltip',
+    ],
+  },
   // Turbopack config สำหรับ @react-pdf/renderer (Next.js 16+)
   turbopack: {
     resolveAlias: {

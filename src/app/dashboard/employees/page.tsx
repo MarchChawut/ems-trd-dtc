@@ -10,9 +10,10 @@
 
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Plus, 
-  Trash2, 
+import Image from 'next/image';
+import {
+  Plus,
+  Trash2,
   Loader2,
   AlertCircle,
   Search,
@@ -33,6 +34,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { User, UserRole, Department, Position, PositionSecond } from '@/types';
+import { useCurrentUser } from '@/contexts/UserContext';
 
 /**
  * คำนำหน้าชื่อ
@@ -79,6 +81,7 @@ const roleConfig: Record<UserRole, { label: string; bg: string; text: string }> 
   SUPER_ADMIN: { label: 'Super Admin', bg: 'bg-purple-100', text: 'text-purple-700' },
   ADMIN: { label: 'Admin', bg: 'bg-indigo-100', text: 'text-indigo-700' },
   MANAGER: { label: 'Manager', bg: 'bg-blue-100', text: 'text-blue-700' },
+  DIRECTOR: { label: 'Director', bg: 'bg-amber-100', text: 'text-amber-700' },
   HR: { label: 'HR', bg: 'bg-pink-100', text: 'text-pink-700' },
   EMPLOYEE: { label: 'Employee', bg: 'bg-slate-100', text: 'text-slate-700' },
 };
@@ -89,7 +92,8 @@ const roleConfig: Record<UserRole, { label: string; bg: string; text: string }> 
 export default function EmployeesPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+  const { role: userRole } = useCurrentUser();
+
   // State สำหรับเก็บรายชื่อพนักงาน
   const [users, setUsers] = useState<User[]>([]);
   
@@ -117,10 +121,7 @@ export default function EmployeesPage() {
     skipped: number;
     errors: string[];
   } | null>(null);
-  
-  // State สำหรับ role ของผู้ใช้ปัจจุบัน
-  const [userRole, setUserRole] = useState<string>('');
-  
+
   // State สำหรับข้อมูลพนักงานใหม่
   const [newUser, setNewUser] = useState({
     prefix: '',
@@ -170,35 +171,28 @@ export default function EmployeesPage() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        // ดึงข้อมูล session
-        const sessionRes = await fetch('/api/auth/session');
-        const sessionData = await sessionRes.json();
-        if (sessionData.success) {
-          setUserRole(sessionData.data.user.role);
-        }
-
-        const response = await fetch('/api/users');
-        const data = await response.json();
-        
-        if (!response.ok) {
-          throw new Error(data.message || 'ไม่สามารถดึงข้อมูลพนักงานได้');
-        }
-        
-        if (data.success) {
-          setUsers(data.data);
-        }
-
-        // ดึงข้อมูลแผนก ตำแหน่ง ตำแหน่งรอง
-        const [deptRes, posRes, posSecRes] = await Promise.all([
+        // ผู้ใช้/แผนก/ตำแหน่ง/ตำแหน่งรอง ไม่ขึ้นต่อกัน ยิงพร้อมกันได้
+        const [response, deptRes, posRes, posSecRes] = await Promise.all([
+          fetch('/api/users'),
           fetch('/api/departments'),
           fetch('/api/positions'),
           fetch('/api/position-seconds'),
         ]);
-        const [deptData, posData, posSecData] = await Promise.all([
+        const [data, deptData, posData, posSecData] = await Promise.all([
+          response.json(),
           deptRes.json(),
           posRes.json(),
           posSecRes.json(),
         ]);
+
+        if (!response.ok) {
+          throw new Error(data.message || 'ไม่สามารถดึงข้อมูลพนักงานได้');
+        }
+
+        if (data.success) {
+          setUsers(data.data);
+        }
+
         if (deptData.success) setDepartments(deptData.data);
         if (posData.success) setPositions(posData.data);
         if (posSecData.success) setPositionSeconds(posSecData.data);
@@ -208,7 +202,7 @@ export default function EmployeesPage() {
         setIsLoading(false);
       }
     };
-    
+
     fetchUsers();
   }, []);
 
@@ -763,9 +757,11 @@ export default function EmployeesPage() {
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
                         {user.profileImage ? (
-                          <img
+                          <Image
                             src={user.profileImage}
                             alt={user.name}
+                            width={36}
+                            height={36}
                             className="w-9 h-9 rounded-full object-cover border border-slate-200"
                           />
                         ) : (
@@ -938,6 +934,7 @@ export default function EmployeesPage() {
                   <option value="EMPLOYEE">Employee</option>
                   <option value="HR">HR</option>
                   <option value="MANAGER">Manager</option>
+                  <option value="DIRECTOR">Director</option>
                   <option value="ADMIN">Admin</option>
                 </select>
               </div>
@@ -1124,9 +1121,11 @@ export default function EmployeesPage() {
               <div className="flex items-center gap-4">
                 <div className="relative">
                   {editingUser.profileImage ? (
-                    <img
+                    <Image
                       src={editingUser.profileImage}
                       alt={editingUser.name}
+                      width={80}
+                      height={80}
                       className="w-20 h-20 rounded-full object-cover border-2 border-slate-200"
                     />
                   ) : (
@@ -1157,7 +1156,7 @@ export default function EmployeesPage() {
               </div>
 
               {/* Form Fields */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">คำนำหน้า / ชื่อ-นามสกุล</label>
                   <div className="flex gap-2">
@@ -1203,6 +1202,7 @@ export default function EmployeesPage() {
                     <option value="EMPLOYEE">Employee</option>
                     <option value="HR">HR</option>
                     <option value="MANAGER">Manager</option>
+                    <option value="DIRECTOR">Director</option>
                     <option value="ADMIN">Admin</option>
                     <option value="SUPER_ADMIN">Super Admin</option>
                   </select>

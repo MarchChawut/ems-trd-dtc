@@ -41,6 +41,8 @@ export interface LateArrivalStats {
 interface LateArrivalFormPDFProps {
   leave: Leave & { user: User };
   stats?: LateArrivalStats;
+  /** ผู้อำนวยการกอง (role DIRECTOR) ที่ยัง active อยู่ - ใช้พิมพ์ชื่อ/ตำแหน่งล่วงหน้าในช่องลงนาม */
+  director?: User | null;
 }
 
 // ตัด prefix ที่ระบบแนบไว้ในเหตุผลอัตโนมัติ (ครึ่งวัน/ชม./เวลาออก-เวลากลับ) ออกก่อนแสดงผล
@@ -179,13 +181,17 @@ const styles = StyleSheet.create({
 });
 
 // PDF Document Component
-function LateArrivalDocument({ leave, stats }: LateArrivalFormPDFProps) {
+function LateArrivalDocument({ leave, stats, director }: LateArrivalFormPDFProps) {
   const documentDate = formatThaiDate(
     (leave as any).createdAt ? new Date((leave as any).createdAt) : new Date()
   );
   const requestDate = formatThaiDate(leave.startDate);
   const reason = (leave.reason || "").replace(REASON_PREFIX_RE, "");
   const sig = formatSignatureName((leave.user as any).prefix, leave.user.name);
+  const directorSig = director
+    ? formatSignatureName(director.prefix, director.name)
+    : { linePrefix: 'พ.อ.', parenName: 'ปรียพงศ์  สามิภักดิ์' };
+  const directorPosition = director?.position || 'ผู้อำนวยการกองการศึกษา วิจัย และพัฒนา';
 
   const s = stats || { exemptPast: 0, exemptTotal: 0, latePast: 0, lateTotal: 0 };
 
@@ -366,16 +372,16 @@ function LateArrivalDocument({ leave, stats }: LateArrivalFormPDFProps) {
             </View>
 
             <View style={[styles.leftAlignRow, { justifyContent: "center" }]}>
-              <Text>พ.อ.</Text>
+              <Text>{directorSig.linePrefix}</Text>
             </View>
             <View style={[styles.leftAlignRow, { justifyContent: "center" }]}>
               <Text style={[styles.dottedLine, { minWidth: 155, textAlign: "center" }]}>
-                ( ปรียพงศ์  สามิภักดิ์ )
+                ( {directorSig.parenName} )
               </Text>
             </View>
             <View style={[styles.leftAlignRow, { justifyContent: "center", marginBottom: 5 }]}>
               <Text style={[styles.dottedLine, { minWidth: 155, textAlign: "center" }]}>
-                ผู้อำนวยการกองการศึกษา วิจัย และพัฒนา
+                {directorPosition}
               </Text>
             </View>
             <View style={[styles.leftAlignRow, { justifyContent: "center" }]}>
@@ -397,12 +403,13 @@ function LateArrivalDocument({ leave, stats }: LateArrivalFormPDFProps) {
 export async function generateLateArrivalPDF(
   leave: Leave & { user: User },
   stats?: LateArrivalStats,
+  director?: User | null,
 ): Promise<Blob> {
   if (typeof window === "undefined") {
     throw new Error("generateLateArrivalPDF can only be called on the client side");
   }
   const { pdf } = await import("@react-pdf/renderer");
-  const blob = await pdf(<LateArrivalDocument leave={leave} stats={stats} />).toBlob();
+  const blob = await pdf(<LateArrivalDocument leave={leave} stats={stats} director={director} />).toBlob();
   return blob;
 }
 
@@ -410,11 +417,12 @@ export async function generateLateArrivalPDF(
 export function LateArrivalPDFDownloadLink({
   leave,
   stats,
+  director,
   children,
 }: LateArrivalFormPDFProps & { children: React.ReactNode }) {
   return (
     <PDFDownloadLink
-      document={<LateArrivalDocument leave={leave} stats={stats} />}
+      document={<LateArrivalDocument leave={leave} stats={stats} director={director} />}
       fileName={`late_arrival_form_${leave.user.username}_${new Date().toISOString().split("T")[0]}.pdf`}
       style={{ textDecoration: "none" }}
     >

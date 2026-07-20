@@ -9,6 +9,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { Users, Calendar, Clock, Package, AlertTriangle, Loader2 } from 'lucide-react';
 import {
   DashboardStats,
@@ -21,12 +22,23 @@ import { LeaveRecord, UserSummary, LeaveStatsData } from '@/components/dashboard
 import { leaveTypeConfig } from '@/components/dashboard/leaveTypeConfig';
 import StatCard from '@/components/dashboard/StatCard';
 import LeaveFilterPanel from '@/components/dashboard/LeaveFilterPanel';
-import LeaveChart from '@/components/dashboard/LeaveChart';
 import LeavePersonTable from '@/components/dashboard/LeavePersonTable';
 import PendingApprovalsList from '@/components/dashboard/PendingApprovalsList';
 import RecentTasksList from '@/components/dashboard/RecentTasksList';
 import LowStockSuppliesWidget from '@/components/dashboard/LowStockSuppliesWidget';
 import AssetStatusWidget from '@/components/dashboard/AssetStatusWidget';
+
+/**
+ * โหลด LeaveChart (recharts) แบบ lazy — ไม่ต้องอยู่ใน bundle หลักของหน้า dashboard
+ */
+const LeaveChart = dynamic(() => import('@/components/dashboard/LeaveChart'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-64">
+      <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+    </div>
+  ),
+});
 
 /**
  * ข้อมูลสถิติเริ่มต้น

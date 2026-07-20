@@ -98,8 +98,24 @@ export const createUserSchema = z.object({
     .string()
     .min(1, 'กรุณาระบุชื่อ')
     .max(100, 'ชื่อต้องไม่เกิน 100 ตัวอักษร'),
-  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'HR']),
+  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'DIRECTOR', 'EMPLOYEE', 'HR']),
   department: z.string().max(100).optional(),
+});
+
+/**
+ * Schema สำหรับตรวจสอบการเปลี่ยนรหัสผ่านด้วยตนเอง (ต้องยืนยันรหัสเดิมก่อน)
+ */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'กรุณากรอกรหัสผ่านเดิม'),
+  newPassword: z
+    .string()
+    .min(8, 'รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร')
+    .max(128, 'รหัสผ่านใหม่ต้องไม่เกิน 128 ตัวอักษร')
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'รหัสผ่านใหม่ต้องมีตัวพิมพ์เล็ก ตัวพิมพ์ใหญ่ และตัวเลข'),
+  confirmPassword: z.string(),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: 'รหัสผ่านใหม่และการยืนยันไม่ตรงกัน',
+  path: ['confirmPassword'],
 });
 
 /**

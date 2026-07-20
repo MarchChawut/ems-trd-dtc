@@ -189,7 +189,16 @@ export function isAdmin(userRole: UserRole): boolean {
  * @returns {boolean} true หากเป็น manager ขึ้นไป
  */
 export function isManagerOrAbove(userRole: UserRole): boolean {
-  return ['MANAGER', 'ADMIN', 'SUPER_ADMIN'].includes(userRole);
+  return ['MANAGER', 'DIRECTOR', 'ADMIN', 'SUPER_ADMIN'].includes(userRole);
+}
+
+/**
+ * ฟังก์ชันสำหรับตรวจสอบว่าผู้ใช้เป็น super admin หรือไม่ (สูงกว่า admin ทั่วไป)
+ * @param userRole - บทบาทของผู้ใช้
+ * @returns {boolean} true หากเป็น super admin
+ */
+export function isSuperAdmin(userRole: UserRole): boolean {
+  return userRole === 'SUPER_ADMIN';
 }
 
 /**

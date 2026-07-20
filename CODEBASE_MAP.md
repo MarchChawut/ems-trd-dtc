@@ -1,6 +1,6 @@
 # CODEBASE MAP — EMS Admin (ems-trd-dtc)
 
-> Generated: 2026-06-06 · Last updated: 2026-07-15 (document register, LINE reminders, dashboard widget refactor, late-arrival leave form, DB-backed file storage)
+> Generated: 2026-06-06 · Last updated: 2026-07-19 (local croner+systemd reminder worker)
 > Purpose: Context reference for feature development
 
 ---
@@ -512,11 +512,19 @@ Helper functions in `lib/auth.ts`:
 [Task created/edited with reminderAt]
   ▼
 [External scheduler] GET /api/cron/reminders  (x-cron-secret header, ~every 1 min)
+   ├─ Cloudflare Worker (cloudflare/cron-reminders/) — public HTTPS cron trigger,
+   │  requires the app reachable at a public TARGET_URL. Untracked, current NAS setup.
+   └─ Local worker (worker/reminder-worker.ts, croner + systemd, see
+      systemd/ems-reminder-worker.service) — outbound-only call to localhost/LAN,
+      no public inbound exposure needed. Works behind a firewall (planned gov-agency
+      deployment). Both triggers are safe to run in parallel — see idempotency below.
   ▼
 [API] isAuthorized (timing-safe secret compare)
   │ task.findMany({reminderAt: {lte: now}, reminderSentAt: null, archivedAt: null})
-  │ for each: sendLineGroupMessage(buildReminderMessage(task))
-  │           → task.update({reminderSentAt: now})   (prevents duplicate sends)
+  │ (plus analogous passes for reminderDayBeforeAt/reminderOnDayAt)
+  │ for each: atomic updateMany claim (reminderSentAt: null → now) before sending,
+  │           so concurrent scheduler calls never double-send
+  │ sendLineGroupMessage(buildReminderMessage(task))
   ▼
 [LINE group] receives push notification
 ```

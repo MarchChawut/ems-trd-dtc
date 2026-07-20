@@ -71,6 +71,29 @@ export function toSafeGregorianDate(dateStr: string): Date {
 }
 
 /**
+ * คำนวณเวลาแจ้งเตือนอัตโนมัติ 2 รอบจากวันที่ของ reminderAt (ใช้เฉพาะวันที่ ไม่สนเวลาที่ตั้งไว้)
+ * - dayBeforeAt: วันก่อนหน้า 1 วัน เวลา 19:00
+ * - onDayAt: วันเดียวกัน เวลา 08:00
+ * @param reminderAt - วัน/เวลาแจ้งเตือนที่ผู้ใช้ตั้งไว้
+ *
+ * ตัวอย่างการใช้งาน:
+ * computeTaskReminderSchedule(new Date('2026-07-22T12:40')) // { dayBeforeAt: 21 ก.ค. 19:00, onDayAt: 22 ก.ค. 08:00 }
+ */
+export function computeTaskReminderSchedule(reminderAt: Date): { dayBeforeAt: Date; onDayAt: Date } {
+  const due = new Date(reminderAt);
+  due.setHours(0, 0, 0, 0);
+
+  const dayBeforeAt = new Date(due);
+  dayBeforeAt.setDate(dayBeforeAt.getDate() - 1);
+  dayBeforeAt.setHours(19, 0, 0, 0);
+
+  const onDayAt = new Date(due);
+  onDayAt.setHours(8, 0, 0, 0);
+
+  return { dayBeforeAt, onDayAt };
+}
+
+/**
  * ฟังก์ชันสำหรับจัดรูปแบบวันที่
  * @param date - วันที่ที่ต้องการจัดรูปแบบ
  * @param options - ตัวเลือกการจัดรูปแบบ

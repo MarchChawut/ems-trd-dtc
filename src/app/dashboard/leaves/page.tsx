@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { cn, safeGetGregorianYear } from '@/lib/utils';
 import { Leave, LeaveType, LeaveStatus, LeaveFormCategory, User, Holiday } from '@/types';
+import { useCurrentUser } from '@/contexts/UserContext';
 import LeaveForm from '@/components/leaves/LeaveForm';
 import LateArrivalForm from '@/components/leaves/LateArrivalForm';
 
@@ -86,7 +87,9 @@ interface UserLeaveStats {
  */
 export default function LeavesPage() {
   const router = useRouter();
-  
+  const { role: userRole } = useCurrentUser();
+  const canManage = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'DIRECTOR'].includes(userRole);
+
   // State สำหรับเก็บรายการลา
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [leavesPage, setLeavesPage] = useState(1);
@@ -174,7 +177,6 @@ export default function LeavesPage() {
   const [isHolidayPanelOpen, setIsHolidayPanelOpen] = useState(false);
   const [newHoliday, setNewHoliday] = useState({ startDate: '', endDate: '', name: '' });
   const [holidayYear, setHolidayYear] = useState(new Date().getFullYear());
-  const [canManage, setCanManage] = useState(false);
 
   /**
    * ดึงข้อมูลการลาและผู้ใช้จาก API
@@ -182,12 +184,11 @@ export default function LeavesPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // ดึงข้อมูลทั้งหมดพร้อมกัน (leaves/users ต้องสำเร็จ, holidays/session ล้มเหลวได้โดยไม่กระทบส่วนอื่น)
-        const [leavesResponse, usersResponse, holidaysData, sessionData] = await Promise.all([
+        // ดึงข้อมูลทั้งหมดพร้อมกัน (leaves/users ต้องสำเร็จ, holidays ล้มเหลวได้โดยไม่กระทบส่วนอื่น)
+        const [leavesResponse, usersResponse, holidaysData] = await Promise.all([
           fetch(`/api/leaves?page=1&limit=${LEAVES_PAGE_SIZE}`),
           fetch('/api/users'),
           fetch(`/api/holidays?year=${new Date().getFullYear()}`).then(r => r.json()).catch(() => null),
-          fetch('/api/auth/session').then(r => r.json()).catch(() => null),
         ]);
 
         // ดึงข้อมูลการลา
@@ -210,11 +211,6 @@ export default function LeavesPage() {
         // ดึงข้อมูลวันหยุด
         if (holidaysData?.success) {
           setHolidays(holidaysData.data);
-        }
-
-        // ตรวจสอบสิทธิ์ admin
-        if (sessionData?.success && ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(sessionData.data.user.role)) {
-          setCanManage(true);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
@@ -671,6 +667,12 @@ export default function LeavesPage() {
       }
     } catch {}
   };
+
+  // ผู้อำนวยการที่ยัง active อยู่ (ใช้เป็นผู้ลงนามที่พิมพ์ล่วงหน้าบนแบบใบลา)
+  const director = useMemo(
+    () => users.find(u => u.role === 'DIRECTOR' && u.isActive) || null,
+    [users]
+  );
 
   // ข้อมูลลาของผู้ใช้ที่กำลังเลือก (สำหรับ LeaveForm previousLeave/userLeaves)
   const previousLeaveForSelected = useMemo(() => {
@@ -1428,7 +1430,7 @@ export default function LeavesPage() {
               )}
 
               {/* วันที่ */}
-              <div className={leaveMode === 'fullday' ? 'grid grid-cols-2 gap-4' : ''}>
+              <div className={leaveMode === 'fullday' ? 'grid grid-cols-1 sm:grid-cols-2 gap-4' : ''}>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     {leaveMode === 'fullday' ? 'ตั้งแต่วันที่' : 'วันที่ลา'} <span className="text-rose-500">*</span>
@@ -1539,7 +1541,7 @@ export default function LeavesPage() {
               </div>
 
               {/* ช่วงวันที่ */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     ตั้งแต่วันที่
@@ -1596,7 +1598,7 @@ export default function LeavesPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   เลือกข้อมูลที่ต้องการ
                 </label>
-                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg">
                   {[
                     { key: 'id', label: 'รหัส' },
                     { key: 'name', label: 'ชื่อพนักงาน' },
@@ -1680,6 +1682,7 @@ export default function LeavesPage() {
                 <LateArrivalForm
                   leave={selectedLeave}
                   userLeaves={userLeavesForSelected}
+                  director={director}
                   onClose={() => {
                     setShowLeaveForm(false);
                     setSelectedLeave(null);
@@ -1688,9 +1691,9 @@ export default function LeavesPage() {
               ) : (
                 <LeaveForm
                   leave={selectedLeave}
-                  holidays={holidays}
                   previousLeave={previousLeaveForSelected}
                   userLeaves={userLeavesForSelected}
+                  director={director}
                   onClose={() => {
                     setShowLeaveForm(false);
                     setSelectedLeave(null);

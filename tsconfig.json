@@ -39,6 +39,9 @@
       ],
       "@/app/*": [
         "./src/app/*"
+      ],
+      "@tests/*": [
+        "./tests/*"
       ]
     },
     "target": "ES2017"
@@ -48,9 +51,11 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next/dev/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "cloudflare"
   ]
 }
