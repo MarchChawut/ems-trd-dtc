@@ -20,6 +20,7 @@ dist/
 .env.development
 .env.production
 .env.test
+worker/.env.worker
 
 # ===============================
 # Logs
@@ -52,6 +53,14 @@ Thumbs.db
 # ===============================
 .cache/
 .eslintcache
+
+# ===============================
+# Playwright (E2E)
+# ===============================
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
 
 # ===============================
 # Claude Code & Backups
