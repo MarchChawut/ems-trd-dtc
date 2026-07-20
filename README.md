@@ -144,7 +144,7 @@ npm run build
 
 ```bash
 # คัดลอกไฟล์ทั้งหมดไปยังโฟลเดอร์ของ Web Station
-rsync -avz --exclude=node_modules --exclude=.git ./ admin@your-synology-ip:/volume1/web/ems-admin/
+rsync -avz --exclude=node_modules --exclude=.git ./ admin@your-synology-ip:/volume1/web/ems-app/
 ```
 
 ### 3. ตั้งค่า Web Station
@@ -152,7 +152,7 @@ rsync -avz --exclude=node_modules --exclude=.git ./ admin@your-synology-ip:/volu
 1. เปิด **Web Station** บน DSM
 2. สร้าง Virtual Host ใหม่:
    - **Hostname**: ems.your-domain.com (หรือ IP)
-   - **Document Root**: `/web/ems-admin`
+   - **Document Root**: `/web/ems-app`
    - **Port**: 3000 (หรือพอร์ตที่ต้องการ)
    - **HTTPS**: แนะนำให้เปิดใช้งาน
 

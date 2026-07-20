@@ -19,7 +19,7 @@
 #   sudo cp systemd/ems-reminder-check.service systemd/ems-reminder-check.timer /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now ems-reminder-check.timer
-#   tail -f /volume1/web/ems-admin/logs/worker.log
+#   tail -f /volume1/web/ems-app/logs/worker.log
 
 [Unit]
 Description=EMS Task Reminder Check (oneshot, triggered by ems-reminder-check.timer)
@@ -28,9 +28,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/volume1/web/ems-admin
+WorkingDirectory=/volume1/web/ems-app
 User=CHANGE_ME
 ExecStart=/usr/local/bin/npm run worker:reminders
 Environment=NODE_ENV=production
-StandardOutput=append:/volume1/web/ems-admin/logs/worker.log
-StandardError=append:/volume1/web/ems-admin/logs/worker.log
+StandardOutput=append:/volume1/web/ems-app/logs/worker.log
+StandardError=append:/volume1/web/ems-app/logs/worker.log

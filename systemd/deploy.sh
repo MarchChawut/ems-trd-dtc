@@ -15,7 +15,7 @@ set -e
 
 NAS_HOST="${NAS_HOST:-it-home423-1}"
 NAS_USER="${NAS_USER:-2morrow}"
-NAS_PATH="${NAS_PATH:-/volume1/web/ems-admin}"
+NAS_PATH="${NAS_PATH:-/volume1/web/ems-app}"
 
 echo "==> Build โปรเจกต์ (local)"
 pnpm build

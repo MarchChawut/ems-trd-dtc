@@ -50,7 +50,7 @@ LINE Messaging API (ส่งเข้ากลุ่ม)
 4. Task Settings > Run command:
 
    ```sh
-   /volume1/web/ems-admin/scripts/cron-reminders.sh
+   /volume1/web/ems-app/scripts/cron-reminders.sh
    ```
 
 5. OK > เลือก task > Run เพื่อทดสอบ แล้วดู `logs/worker.log`
@@ -58,13 +58,13 @@ LINE Messaging API (ส่งเข้ากลุ่ม)
 Health check (แจ้ง LINE ถ้า cron ค้าง) — สร้างอีก task รันทุก 5 นาที:
 
 ```sh
-cd /volume1/web/ems-admin && /usr/local/bin/npx tsx worker/cron-healthcheck.ts >> logs/worker.log 2>&1
+cd /volume1/web/ems-app && /usr/local/bin/npx tsx worker/cron-healthcheck.ts >> logs/worker.log 2>&1
 ```
 
 Log rotation — task รายสัปดาห์:
 
 ```sh
-/volume1/web/ems-admin/systemd/rotate-worker-log.sh
+/volume1/web/ems-app/systemd/rotate-worker-log.sh
 ```
 
 ## Linux server (อนาคต)
@@ -74,9 +74,9 @@ Log rotation — task รายสัปดาห์:
 `crontab -e` ด้วย user ที่รันแอป:
 
 ```cron
-* * * * *   /opt/ems-admin/scripts/cron-reminders.sh
-*/5 * * * * cd /opt/ems-admin && npx tsx worker/cron-healthcheck.ts >> logs/worker.log 2>&1
-0 3 * * 0   /opt/ems-admin/systemd/rotate-worker-log.sh
+* * * * *   /opt/ems-app/scripts/cron-reminders.sh
+*/5 * * * * cd /opt/ems-app && npx tsx worker/cron-healthcheck.ts >> logs/worker.log 2>&1
+0 3 * * 0   /opt/ems-app/systemd/rotate-worker-log.sh
 ```
 
 ### ทางเลือก B: systemd timer (ถ้าต้องการ Persistent=true catch-up หลัง reboot)

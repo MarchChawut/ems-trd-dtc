@@ -21,9 +21,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/volume1/web/ems-admin
+WorkingDirectory=/volume1/web/ems-app
 User=CHANGE_ME
 ExecStart=/usr/local/bin/npx tsx worker/cron-healthcheck.ts
 Environment=NODE_ENV=production
-StandardOutput=append:/volume1/web/ems-admin/logs/worker.log
-StandardError=append:/volume1/web/ems-admin/logs/worker.log
+StandardOutput=append:/volume1/web/ems-app/logs/worker.log
+StandardError=append:/volume1/web/ems-app/logs/worker.log
